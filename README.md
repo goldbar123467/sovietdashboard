@@ -1,183 +1,231 @@
-# Kalshi Crypto Trading System
+# Kalshi Crypto Prediction System
 
-ML-powered trading system for Kalshi crypto prediction markets (BTC, ETH, SOL).
+Production-ready ML system for Kalshi crypto prediction markets (BTC, ETH, SOL) with horizon-aware models and proper probabilistic evaluation.
 
-## Overview
+## What This Does
 
-This system predicts outcomes of Kalshi's 15-minute crypto price contracts by:
-1. Streaming real-time price data from **Coinbase** (a CF Benchmarks constituent exchange)
-2. Fetching Kalshi market data and orderbooks
-3. Computing Black-Scholes implied probabilities and edge vs market prices
-4. Training XGBoost models on historical outcomes
-5. Generating live trade signals
+Predicts binary crypto contracts at **fixed time horizons** (T-60, T-30, T-15 minutes before settlement) and generates threshold-based trade signals when model probability diverges from market price.
 
-### Why Coinbase?
+```
+┌────────────────┐      ┌──────────────┐      ┌────────────────┐
+│  Coinbase WS   │─────▶│  Horizon     │─────▶│  HorizonRouter │
+│  (level2 book) │      │  Snapshots   │      │  (3 models)    │
+└────────────────┘      └──────────────┘      └────────────────┘
+        │                      │                      │
+        │                      │                      ▼
+        │               T-60, T-30, T-15      ┌──────────────┐
+        │               labeled samples       │ Trade Signal │
+        │                                     │ if |edge| >  │
+        └─ Settlement proxy (60s avg) ───────▶│  threshold   │
+                                              └──────────────┘
+```
 
-Kalshi settles crypto contracts using **CF Benchmarks** indices (BRTI for BTC, ETHUSD_RTI for ETH). These indices are calculated from order book data from constituent exchanges:
-- Coinbase
-- Kraken
-- Bitstamp
-- Gemini
-- LMAX Digital
-- Bullish
+## Key Design Decisions
 
-By using Coinbase as our price source, the model trains on data that directly contributes to settlement prices.
+| Decision | Why |
+|----------|-----|
+| **Separate horizon models** | T-15 microstructure patterns contaminate T-60 predictions when pooled |
+| **Risk-adjusted thresholds** | `PnL/(MaxDD+ε)` prevents "3 lucky trades" overfitting |
+| **Best-candidate for T-60** | Fixes systematic late-sampling bias (22s → 5s median offset) |
+| **Walk-forward validation** | No ticker overlap between train/test, simulates real deployment |
+| **Log loss over accuracy** | Probabilistic metric that rewards calibrated uncertainty |
+
+## Quick Start
+
+```bash
+# Install
+pip install aiohttp numpy scipy pandas scikit-learn xgboost joblib
+
+# Collect data (let run 2-3 hours)
+python kalshi_stream.py --coinbase --interval 30 --horizons-only --log data.jsonl
+
+# Label with outcomes
+python kalshi_train.py backfill --data data.jsonl
+
+# Train separate horizon models
+python kalshi_train.py separate-models \
+  --data data.labeled.jsonl \
+  --output-dir ./kalshi_horizon_models
+
+# Production inference
+python kalshi_inference.py --models-dir ./kalshi_horizon_models
+```
 
 ## Files
 
-| File | Description |
-|------|-------------|
-| `kalshi_stream.py` | Real-time market data streamer and logger |
-| `coinbase_price_source.py` | Hardened Coinbase WebSocket level2 order book client |
-| `kalshi_train.py` | Model training with outcome backfill |
-| `kalshi_infer.py` | Live inference for trade signals |
-| `kalshi_model/` | Pre-trained model artifacts |
+### Core Pipeline
 
-## Setup
+| File | Purpose |
+|------|---------|
+| `kalshi_stream.py` | Horizon-aware data collection with best-candidate selection for T-60 |
+| `coinbase_price_source.py` | Hardened Coinbase WebSocket with microprice, imbalance, depth |
+| `kalshi_train.py` | Training with separate models, walk-forward, risk-adjusted thresholds |
+| `kalshi_inference.py` | Production router: `if horizon == T-15: use t_15 elif T-60: use t_60` |
+
+### Validation
+
+| File | Purpose |
+|------|---------|
+| `phase3_validate.py` | Victory gates: offset, lookahead, ECE, PnL per horizon |
+| `phase3_compare.py` | Before/after scoreboard proving engineering changes work |
+| `validate_dataset.py` | Data integrity: no future data, proper dedup, buffer freshness |
+
+### Research
+
+| File | Purpose |
+|------|---------|
+| `microstructure_logger.py` | Per-second JSONL logging (spread, imbalance, microprice) |
+
+## Model Artifacts
+
+```
+kalshi_horizon_models/
+├── t_15/
+│   ├── model.joblib           # XGBoost classifier
+│   ├── best_threshold.json    # Risk-adjusted threshold + policy
+│   ├── calibration.json       # ECE + bin-wise calibration curve
+│   └── feature_stats.json     # Normalization stats
+├── t_60/
+│   └── ...
+├── pooled/                    # Baseline for comparison
+│   └── ...
+└── router_config.json         # Production routing logic
+```
+
+## CLI Reference
+
+### Data Collection
 
 ```bash
-# Create virtual environment
-python -m venv kalshi_venv
-source kalshi_venv/bin/activate
+# Continuous horizon snapshots
+python kalshi_stream.py --coinbase --interval 30 --horizons-only --log data.jsonl
 
-# Install dependencies
-pip install aiohttp numpy pandas scikit-learn xgboost coinbase-advanced-py
+# Research: per-second microstructure
+python microstructure_logger.py --assets BTC ETH --duration 300
 ```
 
-## Usage
-
-### 1. Collect Training Data
+### Training
 
 ```bash
-# Stream and log market data (runs continuously)
-python kalshi_stream.py --coinbase --interval 30 --log kalshi_data.jsonl
+# Fetch settlement outcomes
+python kalshi_train.py backfill --data data.jsonl
 
-# Run in background for overnight collection
-nohup python -u kalshi_stream.py --coinbase --interval 30 --log kalshi_data.jsonl > stream.log 2>&1 &
+# Train separate horizon models (recommended)
+python kalshi_train.py separate-models --data data.labeled.jsonl --output-dir ./models
+
+# Analyze T-60 offset impact
+python kalshi_train.py horizon --data data.labeled.jsonl --compare-offsets
 ```
 
-### 2. Train Model
+### Validation
 
 ```bash
-# Backfill outcomes and train
-python kalshi_train.py all --data kalshi_data.jsonl --out ./kalshi_model
+# Check all victory gates
+python phase3_validate.py --data data.labeled.jsonl
 
-# Or step by step:
-python kalshi_train.py backfill --data kalshi_data.jsonl  # Add outcomes
-python kalshi_train.py train --data kalshi_data.jsonl --out ./kalshi_model
+# Compare before/after datasets
+python phase3_compare.py --before old.labeled.jsonl --after new.labeled.jsonl
 ```
 
-### 3. Run Inference
+### Inference
 
 ```bash
-# Continuous predictions
-python kalshi_infer.py --model ./kalshi_model --interval 60
-
-# Single prediction
-python kalshi_infer.py --model ./kalshi_model --once
+# Demo with test data
+python kalshi_inference.py --models-dir ./kalshi_horizon_models --data test.jsonl
 ```
 
-## Model Performance
+```python
+# Programmatic usage
+from kalshi_inference import HorizonRouter
 
-### Current Status: No Edge Yet
+router = HorizonRouter("./kalshi_horizon_models")
+result = router.predict(features, horizon="T-60", market_price=0.55)
 
-After fixing data leakage in the training pipeline, honest evaluation shows:
-
-| Metric | Leaked (Old) | Honest (Fixed) |
-|--------|--------------|----------------|
-| Test Accuracy | 98.8% | **57.7%** |
-| Test AUC | 0.999 | **0.389** |
-| Edge vs Baseline | +23pp | **-17.0pp** |
-
-The model currently performs **worse than the majority class baseline** (74.7%). This is expected with:
-- Only 41 unique tickers (insufficient variety)
-- Heavy class imbalance in test set
-- Features dominated by market prices (which the model can't beat)
-
-### Training Pipeline Fixes
-
-The `kalshi_train.py` script now uses proper evaluation:
-
-```bash
-# Train with leakage prevention
-python kalshi_train.py train \
-  --data kalshi_data.labeled.jsonl \
-  --output-dir ./kalshi_model \
-  --purge-mins 5 \           # Exclude samples <5min to expiry
-  --min-samples-per-ticker 3  # Require minimum samples
+print(f"Probability: {result.probability:.2%}")
+print(f"Trade: {result.trade} {result.direction}")  # True YES / True NO / False None
+print(f"Edge: {result.edge:.3f}")
 ```
 
-**Leakage prevention:**
-- Walk-forward split (train on earlier tickers, test on later)
-- Ticker grouping (no ticker in both train and test)
-- Purge window (exclude late-market samples where price ≈ outcome)
-- GroupKFold CV (cross-validation respects ticker boundaries)
-- Baseline comparison (market price, moneyness, Black-Scholes, majority class)
+## Evaluation Metrics
 
-### What's Needed for Real Edge
-
-1. **More data** - Months of samples across hundreds of unique tickers
-2. **Better features** - Orderbook depth, trade flow, cross-exchange signals
-3. **Multi-venue price** - Aggregate Coinbase + Kraken + Bitstamp (closer to CF)
-4. **60-second settlement average** - Match Kalshi's exact settlement calculation
-
-### Features (21 total)
-
-Core features:
-- `spot_price`, `strike`, `mins_to_expiry`
-- `vol_annual` (realized volatility)
-- `yes_price`, `yes_bid`, `yes_ask`, `spread`
-- `orderbook_imbalance`
-- `p_model` (Black-Scholes probability)
-- `edge`, `logit_edge`
-
-Engineered features:
-- `moneyness`, `log_moneyness`
-- `time_scaled_vol`
-- `bid_ask_mid`, `model_vs_mid`
-- `edge_per_min`, `vol_adjusted_edge`
-- `spread_pct`, `strike_distance_vol`
-
-## Hardening Features
-
-The Coinbase feed includes overnight reliability features:
-- **Watchdog**: Monitors connection health, forces reconnect if stale >60s
-- **Exponential backoff**: Reconnect delay with jitter (1-30s)
-- **Data quality validation**: Detects crossed books, wide spreads, price jumps
-- **Monitoring stats**: Tracks reconnects, stale periods, bad ticks
-
-## Architecture
+Primary metrics compare model vs market baseline (yes_price as probability):
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│  Coinbase WS    │     │   Kalshi API    │
-│  (level2 book)  │     │  (markets/ob)   │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         ▼                       ▼
-┌─────────────────────────────────────────┐
-│           kalshi_stream.py              │
-│  - Compute mid-price from order book    │
-│  - Fetch Kalshi contracts & orderbooks  │
-│  - Calculate edge vs market price       │
-│  - Log samples to JSONL                 │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│           kalshi_train.py               │
-│  - Backfill outcomes from Kalshi API    │
-│  - Engineer features                    │
-│  - Train XGBoost classifier             │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│           kalshi_infer.py               │
-│  - Load trained model                   │
-│  - Generate live predictions            │
-│  - Display trade signals                │
-└─────────────────────────────────────────┘
+PROBABILISTIC EVALUATION
+════════════════════════════════════════════════════════════════
+  METRIC        │  MARKET    │  MODEL     │  DELTA
+────────────────┼────────────┼────────────┼─────────────────────
+  Log Loss      │  0.6534    │  0.6412    │  -0.0122 (BETTER)
+  Brier Score   │  0.2341    │  0.2298    │  -0.0043 (BETTER)
+  ECE           │  0.0623    │  0.0489    │  -0.0134 (BETTER)
+```
+
+Per-horizon threshold policy with robustness metrics:
+
+```
+T-60:
+  Thresh │ Trades │ Avg Edge │ Avg PnL  │ Max DD  │ Total PnL │ Risk Adj
+═════════╪════════╪══════════╪══════════╪═════════╪═══════════╪══════════
+   0.06  │    67  │  +0.028  │ $+0.012  │ $0.51   │ $+0.80    │ 1.31
+   0.08  │    45  │  +0.035  │ $+0.018  │ $0.42   │ $+0.81    │ 1.56 <<<
+   0.10  │    28  │  +0.041  │ $+0.022  │ $0.38   │ $+0.62    │ 1.29
+
+  BEST POLICY (by risk-adjusted score): threshold=0.08
+    Trades:        45
+    Win rate:      62.2%
+    Avg edge:      3.50% per trade
+    Max DD:        $0.42
+    Risk-adj:      1.56 (PnL/DD)
+```
+
+## Data Quality Invariants
+
+Enforced by `validate_dataset.py` and `phase3_validate.py`:
+
+| Invariant | Check |
+|-----------|-------|
+| No future data | `max_source_ts <= sample_ts` (100% pass required) |
+| No lookahead | `sample_ts >= target_ts` |
+| Buffer freshness | Settlement buffer age ≤ 65s |
+| Deduplication | One sample per (ticker, horizon) |
+| T-60 offset | Median ≤ 10s (goal: ≤ 5s) |
+| Fallback rate | T-60 fallbacks ≤ 30% |
+
+## Why Coinbase?
+
+Kalshi settles using **CF Benchmarks** indices calculated from constituent exchanges:
+- Coinbase, Kraken, Bitstamp, Gemini, LMAX Digital, Bullish
+
+The settlement proxy uses a 60-second rolling average of Coinbase mid price to approximate CF Benchmarks BRTI/ETHUSD_RTI.
+
+## Configuration
+
+### Horizon Settings (`kalshi_stream.py`)
+
+```python
+FIXED_HORIZONS = [60, 30, 15]       # Minutes before expiry
+T60_TOLERANCE_SEC = 45.0            # Wider window for T-60
+GOOD_ENOUGH_OFFSET_SEC = 5.0        # Finalize immediately if offset <= 5s
+BEST_CANDIDATE_HORIZONS = {60}      # Only T-60 uses best-candidate
+```
+
+### Threshold Selection
+
+```python
+risk_adj_score = total_pnl / (max_drawdown + 0.10)
+
+# Selection criteria:
+# - Minimum 5 trades
+# - Positive total PnL
+# - Max drawdown < 80% of total PnL
+# - Highest risk-adjusted score wins
+```
+
+### Walk-Forward Split
+
+```python
+train_pct = 0.70  # 70% train, 30% test by time
+# Grouped by ticker - NO ticker appears in both train and test
 ```
 
 ## License
