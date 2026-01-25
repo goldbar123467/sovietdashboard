@@ -190,6 +190,109 @@ pip install -r requirements.txt
 - You need 500+ samples before training
 - Run training steps in Step 3 above
 
+## Building Your Own Model (Full Workflow)
+
+Once paper trading is working, here's how to build and refine your own model:
+
+### Phase 1: Collect More Data
+```bash
+# Let data collection run for 24-48 hours for a robust dataset
+nohup python3 -u kalshi_stream.py --coinbase --interval 30 --horizons-only --log my_data.jsonl > stream.log 2>&1 &
+
+# Check sample count (aim for 1000+ for production)
+wc -l my_data.jsonl
+```
+
+### Phase 2: Label and Train
+```bash
+# Fetch settlement outcomes from Kalshi API
+python3 kalshi_train.py backfill --data my_data.jsonl
+
+# Train your custom models
+python3 kalshi_train.py separate-models \
+  --data my_data.labeled.jsonl \
+  --output-dir ./my_models
+```
+
+### Phase 3: Validate Performance
+```bash
+# Run validation gates
+python3 phase3_validate.py --data my_data.labeled.jsonl
+
+# Expected output:
+# - T-60 offset median: ≤10s (PASS)
+# - All horizons beat market on log loss (PASS)
+# - ECE < 0.10 per horizon (PASS)
+```
+
+### Phase 4: Paper Trade Your Model
+```bash
+# Test with paper trading first
+python3 kalshi_trader.py \
+  --models-dir ./my_models \
+  --paper \
+  --max-position 10 \
+  --daily-limit -50
+
+# Monitor for 1-2 weeks
+python3 kalshi_trader.py --show-trades trades.jsonl
+```
+
+### Phase 5: Analyze Results
+```bash
+# Check win rate, P&L, edge distribution
+python3 kalshi_trader.py --show-trades trades.jsonl
+
+# Look for:
+# - Win rate > 55%
+# - Positive total P&L
+# - Consistent edge across horizons
+```
+
+### Phase 6: Go Live (Optional)
+```bash
+# Only after paper trading proves profitable!
+python3 kalshi_trader.py \
+  --models-dir ./my_models \
+  --live \
+  --max-position 10 \
+  --daily-limit -25
+```
+
+### Continuous Improvement
+```bash
+# Collect fresh data weekly
+python3 kalshi_stream.py --coinbase --interval 30 --horizons-only --log week2_data.jsonl
+
+# Retrain with combined data
+cat my_data.jsonl week2_data.jsonl > combined.jsonl
+python3 kalshi_train.py backfill --data combined.jsonl
+python3 kalshi_train.py separate-models --data combined.labeled.jsonl --output-dir ./my_models_v2
+
+# Compare old vs new
+python3 phase3_compare.py --before my_data.labeled.jsonl --after combined.labeled.jsonl
+```
+
+### Model Quality Checklist
+
+Before going live, verify:
+
+| Metric | Target | Check Command |
+|--------|--------|---------------|
+| Sample count | ≥1000 | `wc -l data.labeled.jsonl` |
+| Log loss vs market | Negative delta | `python3 phase3_validate.py --data data.labeled.jsonl` |
+| ECE per horizon | <0.10 | Same as above |
+| Paper P&L | Positive after 50+ trades | `python3 kalshi_trader.py --show-trades trades.jsonl` |
+| Win rate | >52% | Same as above |
+
+### Risk Management
+
+| Setting | Conservative | Moderate | Aggressive |
+|---------|--------------|----------|------------|
+| `--max-position` | $5 | $10 | $25 |
+| `--daily-limit` | -$25 | -$50 | -$100 |
+| Min edge threshold | 0.10 | 0.08 | 0.06 |
+
 ## License
 
 MIT
