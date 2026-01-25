@@ -7,11 +7,16 @@ cd /home/clark
 # Pull latest code
 git pull
 
+# Activate venv if exists
+if [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate
+fi
+
 # Kill any existing trader
 pkill -f "python.*kalshi_trader.py" 2>/dev/null
 
 # Start paper trading in background
-nohup python -u kalshi_trader.py \
+nohup python3 -u kalshi_trader.py \
   --models-dir ./kalshi_horizon_models \
   --paper \
   --max-position 10 \
@@ -21,5 +26,5 @@ nohup python -u kalshi_trader.py \
 
 echo "Paper trader started (PID: $!)"
 echo "View logs:   tail -f trader.log"
-echo "View trades: python kalshi_trader.py --show-trades trades.jsonl"
+echo "View trades: python3 kalshi_trader.py --show-trades trades.jsonl"
 echo "Stop:        pkill -f kalshi_trader.py"
