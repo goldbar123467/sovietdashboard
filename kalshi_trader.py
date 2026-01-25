@@ -426,7 +426,7 @@ class TradingLoop:
 
     async def run(self):
         """Run the trading loop."""
-        from kalshi_stream import MarketStreamer, KalshiClient
+        from kalshi_stream import KalshiStream
         from coinbase_price_source import CoinbaseMidPriceSource
 
         self.running = True
@@ -443,106 +443,119 @@ class TradingLoop:
         price_source = CoinbaseMidPriceSource(assets=assets)
         price_source.start()
 
-        kalshi = KalshiClient()
-
         # Wait for initialization
         print("Waiting for price feed...")
         await asyncio.sleep(5)
 
         try:
-            while self.running:
-                loop_start = time.time()
+            async with KalshiStream() as kalshi:
+                while self.running:
+                    loop_start = time.time()
 
-                # Check settlements first
-                await self.trader.check_settlements()
+                    # Check settlements first
+                    await self.trader.check_settlements()
 
-                # Get current markets
-                for asset in assets:
-                    markets = await kalshi.get_markets(asset)
-                    if not markets:
-                        continue
-
-                    for market in markets:
-                        ticker = market.get('ticker', '')
-
-                        # Skip if already have position
-                        if ticker in self.trader.state.positions:
+                    # Get current markets
+                    for asset in assets:
+                        # Map asset to series ticker
+                        series = {"BTC": "KXBTC", "ETH": "KXETH", "SOL": "KXSOL"}.get(asset, f"KX{asset}")
+                        markets = await kalshi.get_markets(series)
+                        if not markets:
                             continue
 
-                        # Get market details
-                        close_time_str = market.get('close_time', '')
-                        if not close_time_str:
-                            continue
+                        for market in markets:
+                            ticker = market.get('ticker', '')
 
-                        try:
-                            close_time = datetime.fromisoformat(close_time_str.replace('Z', '+00:00'))
-                        except:
-                            continue
+                            # Skip if already have position
+                            if ticker in self.trader.state.positions:
+                                continue
 
-                        now = datetime.now(timezone.utc)
-                        mins_to_expiry = (close_time - now).total_seconds() / 60
+                            # Get market details
+                            close_time_str = market.get('close_time', '')
+                            if not close_time_str:
+                                continue
 
-                        # Check if at a horizon we trade
-                        horizon = None
-                        for h in [60, 30, 15]:
-                            if h - 1 <= mins_to_expiry <= h + 1:
-                                horizon = f"T-{h}"
-                                break
+                            try:
+                                close_time = datetime.fromisoformat(close_time_str.replace('Z', '+00:00'))
+                            except:
+                                continue
 
-                        if not horizon:
-                            continue
+                            now = datetime.now(timezone.utc)
+                            mins_to_expiry = (close_time - now).total_seconds() / 60
 
-                        # Get orderbook
-                        orderbook = await kalshi.get_orderbook(ticker)
-                        if not orderbook:
-                            continue
+                            # Check if at a horizon we trade
+                            horizon = None
+                            for h in [60, 30, 15]:
+                                if h - 1 <= mins_to_expiry <= h + 1:
+                                    horizon = f"T-{h}"
+                                    break
 
-                        yes_bid = orderbook.get('yes', {}).get('bid', 0.5)
-                        yes_ask = orderbook.get('yes', {}).get('ask', 0.5)
-                        no_ask = 1.0 - yes_bid  # NO ask = 1 - YES bid
-                        market_price = (yes_bid + yes_ask) / 2
+                            if not horizon:
+                                continue
 
-                        # Get spot price
-                        product_id = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}.get(asset)
-                        book = price_source.books.get(product_id)
-                        if not book or not book.initialized:
-                            continue
+                            # Get orderbook
+                            orderbook = await kalshi.get_orderbook(ticker)
+                            if not orderbook:
+                                continue
 
-                        spot_price = book.get_mid()
-                        if not spot_price:
-                            continue
+                            # Parse orderbook - it returns lists of [price, quantity]
+                            yes_bids = orderbook.get('yes', [])
+                            yes_asks = orderbook.get('no', [])  # NO side is inverse of YES
 
-                        # Build features
-                        strike = kalshi.parse_strike(market)
-                        if not strike:
-                            continue
+                            if yes_bids and isinstance(yes_bids[0], list):
+                                yes_bid = yes_bids[0][0] / 100.0  # Convert cents to dollars
+                            else:
+                                yes_bid = 0.5
 
-                        features = pd.DataFrame([{
-                            'spot_price': spot_price,
-                            'strike': strike,
-                            'mins_to_expiry': mins_to_expiry,
-                            'yes_price': market_price,
-                            'yes_bid': yes_bid,
-                            'yes_ask': yes_ask,
-                            'spread': yes_ask - yes_bid,
-                            'orderbook_imbalance': book.get_top_imbalance(),
-                            'horizon': horizon
-                        }])
+                            if yes_asks and isinstance(yes_asks[0], list):
+                                yes_ask = 1.0 - yes_asks[0][0] / 100.0  # NO bid = 1 - YES ask
+                            else:
+                                yes_ask = 0.5
 
-                        # Evaluate signal
-                        await self.trader.evaluate_signal(
-                            ticker=ticker,
-                            horizon=horizon,
-                            features=features,
-                            market_price=market_price,
-                            yes_ask=yes_ask,
-                            no_ask=no_ask
-                        )
+                            no_ask = 1.0 - yes_bid  # NO ask = 1 - YES bid
+                            market_price = (yes_bid + yes_ask) / 2
 
-                # Sleep until next interval
-                elapsed = time.time() - loop_start
-                sleep_time = max(1, self.interval - elapsed)
-                await asyncio.sleep(sleep_time)
+                            # Get spot price
+                            product_id = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}.get(asset)
+                            book = price_source.books.get(product_id)
+                            if not book or not book.initialized:
+                                continue
+
+                            spot_price = book.get_mid()
+                            if not spot_price:
+                                continue
+
+                            # Build features
+                            strike = kalshi.parse_strike(market)
+                            if not strike:
+                                continue
+
+                            features = pd.DataFrame([{
+                                'spot_price': spot_price,
+                                'strike': strike,
+                                'mins_to_expiry': mins_to_expiry,
+                                'yes_price': market_price,
+                                'yes_bid': yes_bid,
+                                'yes_ask': yes_ask,
+                                'spread': yes_ask - yes_bid,
+                                'orderbook_imbalance': book.get_top_imbalance(),
+                                'horizon': horizon
+                            }])
+
+                            # Evaluate signal
+                            await self.trader.evaluate_signal(
+                                ticker=ticker,
+                                horizon=horizon,
+                                features=features,
+                                market_price=market_price,
+                                yes_ask=yes_ask,
+                                no_ask=no_ask
+                            )
+
+                    # Sleep until next interval
+                    elapsed = time.time() - loop_start
+                    sleep_time = max(1, self.interval - elapsed)
+                    await asyncio.sleep(sleep_time)
 
         except KeyboardInterrupt:
             print("\nShutting down...")
