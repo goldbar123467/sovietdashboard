@@ -38,6 +38,17 @@ try:
 except ImportError:
     COINBASE_AVAILABLE = False
 
+# Feature engineering
+try:
+    from feature_engineering import FeatureBuilder
+    FEATURES_AVAILABLE = True
+except ImportError:
+    FEATURES_AVAILABLE = False
+    FeatureBuilder = None
+
+# Global feature builder instance
+_feature_builder = None
+
 # Fixed horizons for dataset building (minutes before expiry)
 FIXED_HORIZONS = [60, 30, 15]
 HORIZON_TOLERANCE = 0.5  # ±30 seconds window (in minutes)
@@ -164,6 +175,38 @@ class MarketSnapshot:
     min_source_ts_utc: Optional[str] = None  # Oldest data timestamp used (for buffer age check)
     chosen_offset_sec: Optional[float] = None  # Final offset for best-candidate selection (T-60)
     is_fallback: bool = False  # True if this was a fallback sample (no good candidate found)
+    # Advanced features (Phase 2)
+    # Volatility features
+    vol_1min: Optional[float] = None
+    vol_5min: Optional[float] = None
+    vol_ratio: Optional[float] = None
+    vol_regime: Optional[str] = None
+    vol_percentile: Optional[float] = None
+    # Cross-asset features
+    btc_eth_corr: Optional[float] = None
+    btc_sol_corr: Optional[float] = None
+    eth_sol_corr: Optional[float] = None
+    asset_vs_btc_ret: Optional[float] = None
+    btc_leads: Optional[bool] = None
+    correlation_regime: Optional[str] = None
+    # Order flow features
+    imbalance_top: Optional[float] = None
+    imbalance_5bps: Optional[float] = None
+    imbalance_10bps: Optional[float] = None
+    depth_ratio: Optional[float] = None
+    microprice_dev: Optional[float] = None
+    spread_bps: Optional[float] = None
+    book_pressure: Optional[float] = None
+    # Time features
+    hour_utc: Optional[int] = None
+    minute_of_hour: Optional[int] = None
+    day_of_week: Optional[int] = None
+    is_weekend: Optional[bool] = None
+    is_us_market_hours: Optional[bool] = None
+    is_asia_hours: Optional[bool] = None
+    is_europe_hours: Optional[bool] = None
+    time_sin: Optional[float] = None
+    time_cos: Optional[float] = None
 
 # ============================================================================
 # MATH
@@ -529,6 +572,10 @@ class MarketStreamer:
                 # Update settlement buffer (every tick)
                 _settlement_buffers[asset].add(spot, time.time())
 
+                # Update feature builder with price (for cross-asset features)
+                if _feature_builder is not None:
+                    _feature_builder.update_price(asset, now.timestamp(), spot)
+
                 # Get Kalshi markets
                 prefix = ASSETS[asset]["kalshi_prefix"]
                 markets = await kalshi.get_markets(prefix)
@@ -678,10 +725,19 @@ class MarketStreamer:
     async def get_snapshot(
         self, asset: str, kalshi: KalshiStream, price_feed, now: datetime, now_est: datetime
     ) -> Optional[MarketSnapshot]:
+        global _feature_builder
+
+        # Initialize feature builder on first use
+        if _feature_builder is None and FEATURES_AVAILABLE:
+            _feature_builder = FeatureBuilder()
 
         # Get spot price from feed (Binance or Coinbase)
         spot = await price_feed.get_price(asset)
         vol = price_feed.get_vol(asset)
+
+        # Update feature builder with current price
+        if _feature_builder is not None:
+            _feature_builder.update_price(asset, now.timestamp(), spot)
         
         # Get Kalshi markets
         prefix = ASSETS[asset]["kalshi_prefix"]
@@ -738,6 +794,19 @@ class MarketStreamer:
         else:
             signal = "HOLD"
         
+        # Compute advanced features if available
+        advanced_features = {}
+        if _feature_builder is not None and hasattr(price_feed, 'source') and price_feed.source:
+            try:
+                # Get the order book for order flow features
+                product_id = {"BTC": "BTC-USD", "ETH": "ETH-USD", "SOL": "SOL-USD"}.get(asset)
+                book = price_feed.source.books.get(product_id) if product_id else None
+
+                if book:
+                    advanced_features = _feature_builder.compute_all_features(asset, book, now)
+            except Exception as e:
+                pass  # Features are optional, don't fail if computation errors
+
         return MarketSnapshot(
             asset=asset,
             ticker=market["ticker"],
@@ -761,7 +830,35 @@ class MarketStreamer:
             open_interest=market.get("open_interest", 0),
             liquidity=market.get("liquidity", 0) / 100,
             last_price=market.get("last_price", 0) / 100,
-            close_time=market.get("close_time", "")
+            close_time=market.get("close_time", ""),
+            # Advanced features (may be None if not computed)
+            vol_1min=advanced_features.get('vol_1min'),
+            vol_5min=advanced_features.get('vol_5min'),
+            vol_ratio=advanced_features.get('vol_ratio'),
+            vol_regime=advanced_features.get('vol_regime'),
+            vol_percentile=advanced_features.get('vol_percentile'),
+            btc_eth_corr=advanced_features.get('btc_eth_corr'),
+            btc_sol_corr=advanced_features.get('btc_sol_corr'),
+            eth_sol_corr=advanced_features.get('eth_sol_corr'),
+            asset_vs_btc_ret=advanced_features.get('asset_vs_btc_ret'),
+            btc_leads=advanced_features.get('btc_leads'),
+            correlation_regime=advanced_features.get('correlation_regime'),
+            imbalance_top=advanced_features.get('imbalance_top'),
+            imbalance_5bps=advanced_features.get('imbalance_5bps'),
+            imbalance_10bps=advanced_features.get('imbalance_10bps'),
+            depth_ratio=advanced_features.get('depth_ratio'),
+            microprice_dev=advanced_features.get('microprice_dev'),
+            spread_bps=advanced_features.get('spread_bps'),
+            book_pressure=advanced_features.get('book_pressure'),
+            hour_utc=advanced_features.get('hour_utc'),
+            minute_of_hour=advanced_features.get('minute_of_hour'),
+            day_of_week=advanced_features.get('day_of_week'),
+            is_weekend=advanced_features.get('is_weekend'),
+            is_us_market_hours=advanced_features.get('is_us_market_hours'),
+            is_asia_hours=advanced_features.get('is_asia_hours'),
+            is_europe_hours=advanced_features.get('is_europe_hours'),
+            time_sin=advanced_features.get('time_sin'),
+            time_cos=advanced_features.get('time_cos'),
         )
     
     def print_snapshots(self, snapshots: list[MarketSnapshot]):
