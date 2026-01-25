@@ -147,53 +147,131 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-def prepare_training_data(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
-    """Prepare X and y for training"""
+def prepare_training_data(df: pd.DataFrame, purge_mins: int = 5, min_samples_per_ticker: int = 3) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+    """Prepare X and y for training
+
+    Args:
+        df: Raw dataframe with label column
+        purge_mins: Exclude samples within N minutes of expiry (prevents late-market leakage)
+        min_samples_per_ticker: Require minimum samples per ticker for statistical validity
+
+    Returns:
+        X: Feature dataframe
+        y: Label series
+        df_settled: Processed dataframe (needed for walk-forward split by ticker)
+    """
     # Only use settled markets
     df_settled = df[df['label'].notna()].copy()
-    
+
     if len(df_settled) == 0:
         raise ValueError("No settled markets found! Need to wait for markets to expire.")
-    
+
+    print(f"Settled markets: {len(df_settled)}")
+
+    # PURGE WINDOW: Remove samples too close to expiry (price ≈ outcome)
+    if purge_mins > 0:
+        before_purge = len(df_settled)
+        df_settled = df_settled[df_settled['mins_to_expiry'] >= purge_mins]
+        print(f"After purging <{purge_mins}min samples: {len(df_settled)} (removed {before_purge - len(df_settled)})")
+
+    # Filter tickers with too few samples
+    if min_samples_per_ticker > 1:
+        ticker_counts = df_settled['ticker'].value_counts()
+        valid_tickers = ticker_counts[ticker_counts >= min_samples_per_ticker].index
+        before_filter = len(df_settled)
+        df_settled = df_settled[df_settled['ticker'].isin(valid_tickers)]
+        print(f"After filtering tickers with <{min_samples_per_ticker} samples: {len(df_settled)} (removed {before_filter - len(df_settled)})")
+
+    if len(df_settled) == 0:
+        raise ValueError("No samples remaining after filtering! Try reducing purge_mins or min_samples_per_ticker.")
+
     # Engineer features
     df_settled = engineer_features(df_settled)
-    
+
     # Define feature columns
     feature_cols = FEATURE_COLS + [
         'moneyness', 'log_moneyness', 'time_scaled_vol', 'bid_ask_mid',
         'model_vs_mid', 'edge_per_min', 'vol_adjusted_edge', 'spread_pct',
         'strike_distance_vol'
     ]
-    
+
     # Filter to available columns
     available_cols = [c for c in feature_cols if c in df_settled.columns]
-    
+
     X = df_settled[available_cols].copy()
     y = df_settled['label'].astype(int)
-    
+
     # Handle missing values
     X = X.fillna(X.median())
-    
+
     # Remove infinities
     X = X.replace([np.inf, -np.inf], np.nan).fillna(X.median())
-    
+
     print(f"Training data: {len(X)} samples, {len(available_cols)} features")
     print(f"Class balance: {y.mean():.1%} positive (price above strike)")
-    
-    return X, y
+    print(f"Unique tickers: {df_settled['ticker'].nunique()}")
+    print(f"Samples per ticker: mean={df_settled.groupby('ticker').size().mean():.1f}, median={df_settled.groupby('ticker').size().median():.0f}")
+
+    return X, y, df_settled
 
 # ============================================================================
 # MODEL TRAINING
 # ============================================================================
 
-def train_model(X: pd.DataFrame, y: pd.Series, output_dir: Path):
-    """Train XGBoost model with cross-validation"""
-    from sklearn.model_selection import train_test_split, cross_val_score
+def compute_baselines(df_test: pd.DataFrame, y_test: pd.Series):
+    """Compare model against dumb baselines to verify we're not just memorizing"""
+    print("\n" + "="*50)
+    print("BASELINE COMPARISON (Sanity Check)")
+    print("="*50)
+    print("If model barely beats these, we have no real edge.\n")
+
+    results = {}
+
+    # Baseline 1: Market price > 0.5
+    if 'yes_price' in df_test.columns:
+        baseline_market = (df_test['yes_price'] > 0.5).astype(int)
+        acc_market = (baseline_market.values == y_test.values).mean()
+        results['market_price'] = acc_market
+        print(f"Market price > 0.5:     {acc_market:.1%}")
+
+    # Baseline 2: Spot > Strike (moneyness)
+    if 'spot_price' in df_test.columns and 'strike' in df_test.columns:
+        baseline_moneyness = (df_test['spot_price'] > df_test['strike']).astype(int)
+        acc_moneyness = (baseline_moneyness.values == y_test.values).mean()
+        results['moneyness'] = acc_moneyness
+        print(f"Spot > Strike:          {acc_moneyness:.1%}")
+
+    # Baseline 3: p_model > 0.5 (Black-Scholes)
+    if 'p_model' in df_test.columns:
+        baseline_bs = (df_test['p_model'] > 0.5).astype(int)
+        acc_bs = (baseline_bs.values == y_test.values).mean()
+        results['black_scholes'] = acc_bs
+        print(f"Black-Scholes > 0.5:    {acc_bs:.1%}")
+
+    # Baseline 4: Always predict majority class
+    majority_class = int(y_test.mean() > 0.5)
+    acc_majority = (y_test == majority_class).mean()
+    results['majority_class'] = acc_majority
+    print(f"Majority class ({majority_class}):       {acc_majority:.1%}")
+
+    return results
+
+
+def train_model(X: pd.DataFrame, y: pd.Series, df_settled: pd.DataFrame, output_dir: Path):
+    """Train XGBoost model with walk-forward split grouped by ticker.
+
+    CRITICAL: Uses walk-forward validation to prevent data leakage:
+    - Tickers are ordered by first observation time
+    - First 80% of tickers (by time) used for training
+    - Last 20% of tickers (by time) used for testing
+    - NO ticker appears in both train and test sets
+    """
+    from sklearn.model_selection import cross_val_score, GroupKFold
     from sklearn.metrics import (
         accuracy_score, precision_score, recall_score, f1_score,
         roc_auc_score, classification_report, confusion_matrix
     )
-    
+
     try:
         import xgboost as xgb
         use_xgb = True
@@ -201,13 +279,54 @@ def train_model(X: pd.DataFrame, y: pd.Series, output_dir: Path):
         from sklearn.ensemble import GradientBoostingClassifier
         use_xgb = False
         print("XGBoost not found, using sklearn GradientBoosting")
-    
-    # Train/test split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-    
-    print(f"\nTrain: {len(X_train)} | Test: {len(X_test)}")
+
+    # =========================================================================
+    # WALK-FORWARD SPLIT BY TICKER (prevents data leakage)
+    # =========================================================================
+    print("\n" + "="*50)
+    print("WALK-FORWARD SPLIT (Ticker-Grouped)")
+    print("="*50)
+
+    # Get ticker info - align indices
+    tickers = df_settled.loc[X.index, 'ticker']
+
+    # Parse log_time for ordering (handle both string and datetime)
+    if 'log_time' in df_settled.columns:
+        time_col = 'log_time'
+    elif 'timestamp' in df_settled.columns:
+        time_col = 'timestamp'
+    else:
+        raise ValueError("No timestamp column found (log_time or timestamp)")
+
+    # Group by ticker - get first timestamp per ticker for ordering
+    ticker_first_seen = df_settled.groupby('ticker')[time_col].min().sort_values()
+
+    # Walk-forward: train on first 80% of tickers (by time), test on last 20%
+    n_train_tickers = int(len(ticker_first_seen) * 0.8)
+    train_tickers = set(ticker_first_seen.index[:n_train_tickers])
+    test_tickers = set(ticker_first_seen.index[n_train_tickers:])
+
+    train_mask = tickers.isin(train_tickers)
+    test_mask = tickers.isin(test_tickers)
+
+    X_train, X_test = X[train_mask], X[test_mask]
+    y_train, y_test = y[train_mask], y[test_mask]
+
+    # Get df_test for baseline comparisons
+    df_test = df_settled.loc[X_test.index]
+
+    print(f"Train tickers: {len(train_tickers)} (first 80% by time)")
+    print(f"Test tickers:  {len(test_tickers)} (last 20% by time)")
+    print(f"Train samples: {len(X_train)}")
+    print(f"Test samples:  {len(X_test)}")
+    print(f"Train class balance: {y_train.mean():.1%} positive")
+    print(f"Test class balance:  {y_test.mean():.1%} positive")
+
+    # Verify no ticker overlap (sanity check)
+    overlap = train_tickers & test_tickers
+    if overlap:
+        raise ValueError(f"Data leakage! {len(overlap)} tickers in both train and test: {list(overlap)[:5]}")
+    print("Verified: NO ticker overlap between train/test")
     
     # Model
     if use_xgb:
@@ -232,10 +351,17 @@ def train_model(X: pd.DataFrame, y: pd.Series, output_dir: Path):
             min_samples_leaf=10,
             random_state=42
         )
-    
-    # Cross-validation
-    print("\nCross-validation (5-fold)...")
-    cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring='roc_auc')
+
+    # Cross-validation with GroupKFold (groups by ticker to prevent leakage)
+    print("\nCross-validation (5-fold, grouped by ticker)...")
+    train_tickers_series = tickers[train_mask]
+    group_kfold = GroupKFold(n_splits=5)
+    cv_scores = cross_val_score(
+        model, X_train, y_train,
+        cv=group_kfold,
+        groups=train_tickers_series,
+        scoring='roc_auc'
+    )
     print(f"CV AUC: {cv_scores.mean():.3f} (+/- {cv_scores.std()*2:.3f})")
     
     # Fit on full training set
@@ -262,7 +388,23 @@ def train_model(X: pd.DataFrame, y: pd.Series, output_dir: Path):
     cm = confusion_matrix(y_test, y_pred)
     print(f"  TN={cm[0,0]:4d}  FP={cm[0,1]:4d}")
     print(f"  FN={cm[1,0]:4d}  TP={cm[1,1]:4d}")
-    
+
+    # BASELINE COMPARISON - critical for honest evaluation
+    baseline_results = compute_baselines(df_test, y_test)
+
+    # Calculate edge over best baseline
+    best_baseline = max(baseline_results.values()) if baseline_results else 0.5
+    model_accuracy = accuracy_score(y_test, y_pred)
+    edge_over_baseline = (model_accuracy - best_baseline) * 100
+
+    print(f"\n>>> MODEL EDGE: {edge_over_baseline:+.1f} pp over best baseline ({best_baseline:.1%})")
+    if edge_over_baseline < 2.0:
+        print(">>> WARNING: Model edge < 2pp - may not be tradeable after fees")
+    elif edge_over_baseline < 5.0:
+        print(">>> CAUTION: Model edge is marginal - careful position sizing needed")
+    else:
+        print(">>> Model shows meaningful edge - proceed with live testing")
+
     # Feature importance
     print("\nFeature Importance (top 15):")
     if use_xgb:
@@ -305,7 +447,14 @@ def train_model(X: pd.DataFrame, y: pd.Series, output_dir: Path):
         'test_auc': float(roc_auc_score(y_test, y_prob)),
         'train_samples': len(X_train),
         'test_samples': len(X_test),
-        'positive_rate': float(y.mean()),
+        'train_tickers': len(train_tickers),
+        'test_tickers': len(test_tickers),
+        'positive_rate_train': float(y_train.mean()),
+        'positive_rate_test': float(y_test.mean()),
+        'baselines': {k: float(v) for k, v in baseline_results.items()},
+        'best_baseline': float(best_baseline),
+        'edge_over_baseline_pp': float(edge_over_baseline),
+        'split_method': 'walk_forward_by_ticker',
         'trained_at': datetime.now().isoformat()
     }
     
@@ -405,28 +554,36 @@ async def run_backfill(data_path: Path, output_path: Optional[Path] = None):
     print(f"Saved labeled data: {output_path}")
     return df
 
-def run_train(data_path: Path, output_dir: Path):
-    """Train model on labeled data"""
+def run_train(data_path: Path, output_dir: Path, purge_mins: int = 5, min_samples_per_ticker: int = 3):
+    """Train model on labeled data with proper walk-forward validation"""
     df = load_jsonl(data_path)
-    
+
     # Check if already has labels
     if 'label' not in df.columns:
         raise ValueError("Data not labeled! Run 'backfill' first.")
-    
-    X, y = prepare_training_data(df)
-    model, importance = train_model(X, y, output_dir)
-    
-    # Edge analysis
+
+    print("\n" + "="*50)
+    print("DATA PREPARATION")
+    print("="*50)
+
+    X, y, df_settled = prepare_training_data(
+        df,
+        purge_mins=purge_mins,
+        min_samples_per_ticker=min_samples_per_ticker
+    )
+    model, importance = train_model(X, y, df_settled, output_dir)
+
+    # Edge analysis on full settled data (informational only)
     analyze_edge(df, model, list(X.columns))
-    
+
     return model
 
-async def run_all(data_path: Path, output_dir: Path):
+async def run_all(data_path: Path, output_dir: Path, purge_mins: int = 5, min_samples_per_ticker: int = 3):
     """Backfill + train in one shot"""
     df = await run_backfill(data_path)
-    
+
     labeled_path = data_path.with_suffix('.labeled.jsonl')
-    run_train(labeled_path, output_dir)
+    run_train(labeled_path, output_dir, purge_mins=purge_mins, min_samples_per_ticker=min_samples_per_ticker)
 
 def main():
     parser = argparse.ArgumentParser(description="Kalshi Model Training Pipeline")
@@ -442,12 +599,20 @@ def main():
     tr_parser.add_argument("--data", type=Path, required=True, help="Labeled JSONL file")
     tr_parser.add_argument("--output-dir", type=Path, default=Path("./kalshi_model"),
                           help="Output directory for model")
-    
+    tr_parser.add_argument("--purge-mins", type=int, default=5,
+                          help="Exclude samples within N minutes of expiry (prevents late-market leakage, default: 5)")
+    tr_parser.add_argument("--min-samples-per-ticker", type=int, default=3,
+                          help="Require minimum samples per ticker (default: 3)")
+
     # All-in-one command
     all_parser = subparsers.add_parser("all", help="Backfill + train")
     all_parser.add_argument("--data", type=Path, required=True, help="Input JSONL file")
     all_parser.add_argument("--output-dir", type=Path, default=Path("./kalshi_model"),
                            help="Output directory for model")
+    all_parser.add_argument("--purge-mins", type=int, default=5,
+                          help="Exclude samples within N minutes of expiry (default: 5)")
+    all_parser.add_argument("--min-samples-per-ticker", type=int, default=3,
+                          help="Require minimum samples per ticker (default: 3)")
     
     # Stats command
     st_parser = subparsers.add_parser("stats", help="Show data statistics")
@@ -459,10 +624,20 @@ def main():
         asyncio.run(run_backfill(args.data, args.output))
     
     elif args.command == "train":
-        run_train(args.data, args.output_dir)
-    
+        run_train(
+            args.data,
+            args.output_dir,
+            purge_mins=args.purge_mins,
+            min_samples_per_ticker=args.min_samples_per_ticker
+        )
+
     elif args.command == "all":
-        asyncio.run(run_all(args.data, args.output_dir))
+        asyncio.run(run_all(
+            args.data,
+            args.output_dir,
+            purge_mins=args.purge_mins,
+            min_samples_per_ticker=args.min_samples_per_ticker
+        ))
     
     elif args.command == "stats":
         df = load_jsonl(args.data)
