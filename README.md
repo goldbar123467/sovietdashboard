@@ -79,16 +79,49 @@ python kalshi_infer.py --model ./kalshi_model --once
 
 ## Model Performance
 
-Current model metrics (trained on ~3000 samples):
+### Current Status: No Edge Yet
 
-| Metric | Value |
-|--------|-------|
-| Test Accuracy | 98.8% |
-| Test AUC | 0.999 |
-| Test F1 | 0.990 |
-| CV AUC (5-fold) | 0.998 ± 0.002 |
+After fixing data leakage in the training pipeline, honest evaluation shows:
 
-### Features (22 total)
+| Metric | Leaked (Old) | Honest (Fixed) |
+|--------|--------------|----------------|
+| Test Accuracy | 98.8% | **57.7%** |
+| Test AUC | 0.999 | **0.389** |
+| Edge vs Baseline | +23pp | **-17.0pp** |
+
+The model currently performs **worse than the majority class baseline** (74.7%). This is expected with:
+- Only 41 unique tickers (insufficient variety)
+- Heavy class imbalance in test set
+- Features dominated by market prices (which the model can't beat)
+
+### Training Pipeline Fixes
+
+The `kalshi_train.py` script now uses proper evaluation:
+
+```bash
+# Train with leakage prevention
+python kalshi_train.py train \
+  --data kalshi_data.labeled.jsonl \
+  --output-dir ./kalshi_model \
+  --purge-mins 5 \           # Exclude samples <5min to expiry
+  --min-samples-per-ticker 3  # Require minimum samples
+```
+
+**Leakage prevention:**
+- Walk-forward split (train on earlier tickers, test on later)
+- Ticker grouping (no ticker in both train and test)
+- Purge window (exclude late-market samples where price ≈ outcome)
+- GroupKFold CV (cross-validation respects ticker boundaries)
+- Baseline comparison (market price, moneyness, Black-Scholes, majority class)
+
+### What's Needed for Real Edge
+
+1. **More data** - Months of samples across hundreds of unique tickers
+2. **Better features** - Orderbook depth, trade flow, cross-exchange signals
+3. **Multi-venue price** - Aggregate Coinbase + Kraken + Bitstamp (closer to CF)
+4. **60-second settlement average** - Match Kalshi's exact settlement calculation
+
+### Features (21 total)
 
 Core features:
 - `spot_price`, `strike`, `mins_to_expiry`
