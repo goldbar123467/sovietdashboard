@@ -1,0 +1,20 @@
+# Data files
+*.jsonl
+*.csv
+
+# Logs
+*.log
+*.pid
+
+# Virtual environment
+kalshi_venv/
+venv/
+__pycache__/
+*.pyc
+
+# Credentials
+.env
+*.key
+
+# OS
+.DS_Store
