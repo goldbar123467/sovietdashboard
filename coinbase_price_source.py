@@ -242,6 +242,76 @@ class Level2OrderBook:
 
         return record
 
+    def get_depth_at_band(self, band_bps: float) -> tuple[float, float]:
+        """Get total bid/ask quantity within band_bps of mid price.
+
+        Args:
+            band_bps: Basis points from mid (e.g., 5 = within 0.05% of mid)
+
+        Returns:
+            (bid_depth, ask_depth) - total quantities
+        """
+        mid = self.get_mid()
+        if mid is None:
+            return (0.0, 0.0)
+
+        band_pct = band_bps / 10000
+        lower_bound = mid * (1 - band_pct)
+        upper_bound = mid * (1 + band_pct)
+
+        bid_depth = sum(qty for price, qty in self.bids.items()
+                        if price >= lower_bound)
+        ask_depth = sum(qty for price, qty in self.asks.items()
+                        if price <= upper_bound)
+
+        return (bid_depth, ask_depth)
+
+    def get_imbalance_at_band(self, band_bps: float) -> float:
+        """Get order book imbalance within band.
+
+        Returns: (bid_depth - ask_depth) / (bid_depth + ask_depth)
+                 Range: [-1, 1] where 1 = all bids, -1 = all asks
+        """
+        bid_depth, ask_depth = self.get_depth_at_band(band_bps)
+        total = bid_depth + ask_depth
+        if total == 0:
+            return 0.0
+        return (bid_depth - ask_depth) / total
+
+    def get_top_imbalance(self) -> float:
+        """Get imbalance at top of book only."""
+        best_bid = self.get_best_bid()
+        best_ask = self.get_best_ask()
+        if best_bid is None or best_ask is None:
+            return 0.0
+
+        bid_qty = self.bids.get(best_bid, 0)
+        ask_qty = self.asks.get(best_ask, 0)
+        total = bid_qty + ask_qty
+        if total == 0:
+            return 0.0
+        return (bid_qty - ask_qty) / total
+
+    def get_microprice(self) -> Optional[float]:
+        """Get volume-weighted microprice.
+
+        microprice = (ask * bid_qty + bid * ask_qty) / (bid_qty + ask_qty)
+
+        This leads the mid when imbalance is extreme.
+        """
+        best_bid = self.get_best_bid()
+        best_ask = self.get_best_ask()
+        if best_bid is None or best_ask is None:
+            return None
+
+        bid_qty = self.bids.get(best_bid, 0)
+        ask_qty = self.asks.get(best_ask, 0)
+        total = bid_qty + ask_qty
+        if total == 0:
+            return self.get_mid()
+
+        return (best_ask * bid_qty + best_bid * ask_qty) / total
+
 
 # ============================================================================
 # COINBASE PRICE SOURCE (Hardened)

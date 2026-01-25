@@ -23,11 +23,13 @@ from datetime import datetime, timezone, timedelta
 
 # EST timezone (UTC-5)
 EST = timezone(timedelta(hours=-5))
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, Literal
 import json
 import sys
 from collections import deque
+import statistics
+import time
 
 # Coinbase feed (CF Benchmarks constituent)
 try:
@@ -35,6 +37,28 @@ try:
     COINBASE_AVAILABLE = True
 except ImportError:
     COINBASE_AVAILABLE = False
+
+# Fixed horizons for dataset building (minutes before expiry)
+FIXED_HORIZONS = [60, 30, 15]
+HORIZON_TOLERANCE = 0.5  # ±30 seconds window (in minutes)
+GOOD_ENOUGH_OFFSET_SEC = 5.0  # Finalize immediately if offset <= this
+
+# Horizons that use best-candidate selection (others use immediate logging)
+# T-60 has systematic late-bias, so we use best-candidate there
+# T-15/T-30 are already near-deterministic, so immediate logging is fine
+BEST_CANDIDATE_HORIZONS = {60}  # Only T-60 uses best-candidate selection
+
+# T-60 tolerance settings (wider to prevent sample count collapse)
+T60_TOLERANCE_SEC = 45.0  # Wider window for T-60 (default HORIZON_TOLERANCE * 60 = 30s)
+T60_FALLBACK_ENABLED = True  # If no good candidate, use first-in-window with fallback flag
+
+# Best-candidate tracking for deterministic "closest to target" selection
+# Key: (ticker, horizon) -> {'snapshot': MarketSnapshot, 'offset_sec': float, 'target_ts': datetime, 'is_fallback': bool}
+_pending_candidates: dict[tuple[str, int], dict] = {}
+
+# Track finalized (already logged) horizons
+# Key: (ticker, horizon) -> bool
+_logged_horizons: dict[tuple[str, int], bool] = {}
 
 # ============================================================================
 # CONFIG
@@ -58,6 +82,49 @@ PRICE_BUFFER_SIZE = 120
 # ============================================================================
 # DATA STRUCTURES
 # ============================================================================
+
+@dataclass
+class SettlementBuffer:
+    """Track per-second mids for 60-second settlement proxy.
+
+    IMPORTANT: This buffer is strictly BACKWARD-LOOKING.
+    All data in the buffer is from timestamps <= current time.
+    """
+    mids: deque = field(default_factory=lambda: deque(maxlen=60))
+    timestamps: deque = field(default_factory=lambda: deque(maxlen=60))
+
+    def add(self, mid: float, ts: float):
+        """Add a mid price observation."""
+        self.mids.append(mid)
+        self.timestamps.append(ts)
+
+    def get_avg60(self) -> Optional[float]:
+        """Get 60-second average (settlement proxy)."""
+        if len(self.mids) < 30:  # Require at least 30 seconds
+            return None
+        return statistics.mean(self.mids)
+
+    def get_max_source_ts(self) -> Optional[float]:
+        """Get the most recent timestamp used in the buffer (for leak auditing)."""
+        if len(self.timestamps) == 0:
+            return None
+        return max(self.timestamps)
+
+    def get_min_source_ts(self) -> Optional[float]:
+        """Get the oldest timestamp in the buffer."""
+        if len(self.timestamps) == 0:
+            return None
+        return min(self.timestamps)
+
+    def get_settlement_proxy(self, strike: float) -> Optional[int]:
+        """Get settlement proxy: 1 if avg60 > strike, 0 otherwise."""
+        avg = self.get_avg60()
+        if avg is None:
+            return None
+        return 1 if avg > strike else 0
+
+# Global settlement buffers per asset
+_settlement_buffers: dict[str, SettlementBuffer] = {}
 
 @dataclass
 class MarketSnapshot:
@@ -85,6 +152,18 @@ class MarketSnapshot:
     liquidity: float = 0.0
     last_price: float = 0.0
     close_time: str = ""
+    # Horizon-specific fields
+    horizon: Optional[str] = None          # "T-60", "T-30", "T-15"
+    horizon_mins: Optional[int] = None     # 60, 30, 15
+    settlement_proxy: Optional[int] = None # 1 if avg60 > strike, 0 otherwise
+    avg60_mid: Optional[float] = None      # 60-second average mid price
+    # Audit fields for leak detection
+    sample_ts_utc: Optional[str] = None      # When this sample was taken
+    target_ts_utc: Optional[str] = None      # When the horizon target was (close_time - horizon)
+    max_source_ts_utc: Optional[str] = None  # Latest data timestamp used (must be <= sample_ts)
+    min_source_ts_utc: Optional[str] = None  # Oldest data timestamp used (for buffer age check)
+    chosen_offset_sec: Optional[float] = None  # Final offset for best-candidate selection (T-60)
+    is_fallback: bool = False  # True if this was a fallback sample (no good candidate found)
 
 # ============================================================================
 # MATH
@@ -338,12 +417,62 @@ class BinanceFeed:
 # ============================================================================
 
 class MarketStreamer:
-    def __init__(self, assets: list[str], interval: int = 60, json_output: bool = False, log_file: str = None):
+    def __init__(self, assets: list[str], interval: int = 60, json_output: bool = False, log_file: str = None, horizons_only: bool = False, horizons: list[int] = None):
         self.assets = assets
         self.interval = interval
         self.json_output = json_output
         self.log_file = log_file
+        self.horizons_only = horizons_only
+        self.horizons = horizons if horizons else FIXED_HORIZONS
         self.running = False
+
+    def _finalize_candidate(self, key: tuple, snapshots: list, force_fallback: bool = False):
+        """Finalize and log a pending horizon candidate.
+
+        This is called when:
+        1. Offset is <= GOOD_ENOUGH_OFFSET_SEC (early finalization), or
+        2. We've exited the tolerance window (must commit what we have)
+
+        Args:
+            key: (ticker, horizon) tuple
+            snapshots: List to append the finalized snapshot to
+            force_fallback: If True, mark as fallback even if offset looks good
+        """
+        global _pending_candidates, _logged_horizons
+
+        if key not in _pending_candidates:
+            return
+
+        candidate = _pending_candidates.pop(key)
+        snapshot = candidate['snapshot']
+        offset_sec = candidate['offset_sec']
+        is_fallback = candidate.get('is_fallback', False) or force_fallback
+
+        # Record the winning offset for validation
+        snapshot.chosen_offset_sec = offset_sec
+
+        # Mark as fallback if offset is poor (>15s) or explicitly marked
+        # A "fallback" sample means best-candidate didn't find an ideal candidate
+        if is_fallback or offset_sec > 15.0:
+            snapshot.is_fallback = True
+
+        # Log to file
+        if self.log_file:
+            with open(self.log_file, "a") as f:
+                record = asdict(snapshot)
+                record['log_time'] = datetime.now(timezone.utc).isoformat()
+                f.write(json.dumps(record) + '\n')
+
+        # Mark as finalized
+        _logged_horizons[key] = True
+
+        if not self.json_output:
+            ticker, horizon = key
+            fallback_str = " [FALLBACK]" if snapshot.is_fallback else ""
+            print(f"  📍 {snapshot.asset} {ticker} @ T-{horizon} FINALIZED "
+                  f"(chosen_offset={offset_sec:.1f}s, settlement_proxy={snapshot.settlement_proxy}){fallback_str}")
+
+        snapshots.append(snapshot)
 
     async def run_with_feed(self, kalshi, price_feed):
         """Run with externally provided feeds"""
@@ -381,32 +510,169 @@ class MarketStreamer:
                 await asyncio.sleep(self.interval)
 
     async def tick(self, kalshi: KalshiStream, price_feed):
+        global _settlement_buffers, _logged_horizons
+
         now = datetime.now(timezone.utc)
         now_est = now.astimezone(EST)
         snapshots = []
-        
+
+        # Initialize settlement buffers
+        for asset in self.assets:
+            if asset not in _settlement_buffers:
+                _settlement_buffers[asset] = SettlementBuffer()
+
         for asset in self.assets:
             try:
-                snapshot = await self.get_snapshot(asset, kalshi, price_feed, now, now_est)
-                if snapshot:
-                    snapshots.append(snapshot)
+                # Get current spot price
+                spot = await price_feed.get_price(asset)
+
+                # Update settlement buffer (every tick)
+                _settlement_buffers[asset].add(spot, time.time())
+
+                # Get Kalshi markets
+                prefix = ASSETS[asset]["kalshi_prefix"]
+                markets = await kalshi.get_markets(prefix)
+
+                if not markets:
+                    continue
+
+                # Process each market for horizon-based logging
+                for market in markets:
+                    ticker = market.get("ticker", "")
+                    if not ticker:
+                        continue
+
+                    # Parse expiry and calculate time to expiry
+                    close_str = market.get("close_time", "")
+                    try:
+                        close_time = datetime.fromisoformat(close_str.replace("Z", "+00:00"))
+                    except:
+                        continue
+
+                    mins_to_expiry = max((close_time - now).total_seconds() / 60, 0.1)
+
+                    # Skip expired markets
+                    if mins_to_expiry < 0:
+                        continue
+
+                    # Check each fixed horizon
+                    for horizon in self.horizons:
+                        key = (ticker, horizon)
+
+                        # Skip if already finalized
+                        if _logged_horizons.get(key, False):
+                            continue
+
+                        # Calculate target time and offset
+                        target_ts = close_time - timedelta(minutes=horizon)
+                        offset_sec = (now - target_ts).total_seconds()
+
+                        # Check if in valid window: past target but within tolerance
+                        # offset_sec >= 0 means we're at or after target (no lookahead)
+                        # offset_sec <= tolerance means we're within the window
+                        # T-60 uses wider tolerance to prevent sample count collapse
+                        tolerance_sec = T60_TOLERANCE_SEC if horizon in BEST_CANDIDATE_HORIZONS else HORIZON_TOLERANCE * 60
+                        in_window = 0 <= offset_sec <= tolerance_sec
+
+                        if not in_window:
+                            # Check if we've EXITED the window (finalize pending candidate)
+                            if offset_sec > tolerance_sec and key in _pending_candidates:
+                                self._finalize_candidate(key, snapshots)
+                            continue
+
+                        # Decide: best-candidate (T-60) or immediate logging (T-15/T-30)
+                        use_best_candidate = horizon in BEST_CANDIDATE_HORIZONS
+
+                        # Create snapshot
+                        snapshot = await self.get_snapshot(asset, kalshi, price_feed, now, now_est)
+                        if not snapshot:
+                            continue
+
+                        # Add horizon-specific fields
+                        snapshot.horizon = f"T-{horizon}"
+                        snapshot.horizon_mins = horizon
+
+                        # Add settlement proxy from buffer
+                        strike = kalshi.parse_strike(market)
+                        if strike and asset in _settlement_buffers:
+                            snapshot.settlement_proxy = _settlement_buffers[asset].get_settlement_proxy(strike)
+                            snapshot.avg60_mid = _settlement_buffers[asset].get_avg60()
+
+                        # AUDIT FIELDS
+                        snapshot.sample_ts_utc = now.isoformat()
+                        snapshot.target_ts_utc = target_ts.isoformat()
+                        max_ts = _settlement_buffers[asset].get_max_source_ts()
+                        min_ts = _settlement_buffers[asset].get_min_source_ts()
+                        if max_ts:
+                            snapshot.max_source_ts_utc = datetime.fromtimestamp(max_ts, timezone.utc).isoformat()
+                        if min_ts:
+                            snapshot.min_source_ts_utc = datetime.fromtimestamp(min_ts, timezone.utc).isoformat()
+
+                        if use_best_candidate:
+                            # BEST-CANDIDATE SELECTION (for T-60)
+                            # Store if better than existing, finalize when good enough
+                            existing = _pending_candidates.get(key)
+                            if existing is None or offset_sec < existing['offset_sec']:
+                                # Mark as NOT fallback if offset is good (<=10s)
+                                # Mark as fallback if this is just the first sample we could get
+                                is_fallback = existing is None and offset_sec > 10.0
+                                _pending_candidates[key] = {
+                                    'snapshot': snapshot,
+                                    'offset_sec': offset_sec,
+                                    'target_ts': target_ts,
+                                    'close_time': close_time,
+                                    'is_fallback': is_fallback
+                                }
+
+                                if not self.json_output:
+                                    action = "new best" if existing else "first"
+                                    fallback_note = " (fallback)" if is_fallback else ""
+                                    print(f"  ⏳ {asset} {ticker} @ T-{horizon} candidate ({action}, offset={offset_sec:.1f}s){fallback_note}")
+
+                            # EARLY FINALIZATION: If offset is "good enough", finalize immediately
+                            if offset_sec <= GOOD_ENOUGH_OFFSET_SEC and key in _pending_candidates:
+                                self._finalize_candidate(key, snapshots)
+
+                        else:
+                            # IMMEDIATE LOGGING (for T-15/T-30)
+                            # These horizons don't have late-bias, so log immediately
+                            if self.log_file:
+                                with open(self.log_file, "a") as f:
+                                    record = asdict(snapshot)
+                                    record['log_time'] = now.isoformat()
+                                    f.write(json.dumps(record) + '\n')
+
+                            _logged_horizons[key] = True
+
+                            if not self.json_output:
+                                print(f"  📍 {asset} {ticker} @ T-{horizon} logged (offset={offset_sec:.1f}s)")
+
+                            snapshots.append(snapshot)
+
+                # If not in horizons-only mode, get regular snapshot
+                if not self.horizons_only:
+                    snapshot = await self.get_snapshot(asset, kalshi, price_feed, now, now_est)
+                    if snapshot:
+                        snapshots.append(snapshot)
+
             except Exception as e:
                 if not self.json_output:
                     print(f"Error {asset}: {e}")
-        
-        # Log to file for training
-        if self.log_file and snapshots:
+
+        # Log regular snapshots to file for training (only in non-horizon mode)
+        if self.log_file and snapshots and not self.horizons_only:
             with open(self.log_file, "a") as f:
                 for s in snapshots:
-                    record = asdict(s)
-                    record["log_time"] = now.isoformat()
-                    f.write(json.dumps(record) + "\n")
+                    if s.horizon is None:  # Only log non-horizon snapshots here
+                        record = asdict(s)
+                        record["log_time"] = now.isoformat()
+                        f.write(json.dumps(record) + "\n")
 
         if self.json_output:
             for s in snapshots:
                 print(json.dumps(asdict(s)))
                 sys.stdout.flush()
-        else:
+        elif not self.horizons_only:
             self.print_snapshots(snapshots)
     
     async def get_snapshot(
@@ -543,6 +809,10 @@ def main():
                        help="Log snapshots to JSONL file for ML training")
     parser.add_argument("--coinbase", action="store_true",
                        help="Use Coinbase order book mid (CF constituent) instead of Binance")
+    parser.add_argument("--horizons-only", action="store_true",
+                       help="Only log at fixed horizons (T-60, T-30, T-15)")
+    parser.add_argument("--horizons", nargs="+", type=int, default=[60, 30, 15],
+                       help="Which horizons to log (default: 60 30 15)")
 
     args = parser.parse_args()
 
@@ -550,7 +820,9 @@ def main():
         assets=args.assets,
         interval=args.interval,
         json_output=args.json,
-        log_file=args.log
+        log_file=args.log,
+        horizons_only=args.horizons_only,
+        horizons=args.horizons
     )
     
     async def run():
