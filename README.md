@@ -1,6 +1,52 @@
 # Kalshi Crypto Prediction System
 
-Production-ready ML system for Kalshi crypto prediction markets (BTC, ETH, SOL) with horizon-aware models and proper probabilistic evaluation.
+Production-ready ML system for Kalshi crypto prediction markets (BTC, ETH, SOL) with horizon-aware models and paper/live trading.
+
+## One-Shot Setup
+
+**Fresh install (paste into terminal):**
+```bash
+cd ~ && git clone https://github.com/goldbar123467/Kalshi-Crypto.git && cd Kalshi-Crypto && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && nohup python3 -u kalshi_stream.py --coinbase --interval 30 --horizons-only --log training_data.jsonl > stream.log 2>&1 & echo "Data collection started. Check: tail -f stream.log"
+```
+
+**Already cloned? Start collecting:**
+```bash
+cd ~/Kalshi-Crypto && source venv/bin/activate && git pull && nohup python3 -u kalshi_stream.py --coinbase --interval 30 --horizons-only --log training_data.jsonl > stream.log 2>&1 &
+```
+
+## Quick Start
+
+### Step 1: Install
+```bash
+git clone https://github.com/goldbar123467/Kalshi-Crypto.git
+cd Kalshi-Crypto
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Step 2: Collect Training Data (2-3 hours minimum)
+```bash
+nohup python3 -u kalshi_stream.py --coinbase --interval 30 --horizons-only --log training_data.jsonl > stream.log 2>&1 &
+
+# Check progress
+tail -f stream.log
+wc -l training_data.jsonl
+```
+
+### Step 3: Train Models (after 500+ samples)
+```bash
+python3 kalshi_train.py backfill --data training_data.jsonl
+python3 kalshi_train.py separate-models --data training_data.labeled.jsonl --output-dir ./kalshi_horizon_models
+```
+
+### Step 4: Start Paper Trading
+```bash
+bash start_trader.sh
+
+# Or manually:
+python3 kalshi_trader.py --models-dir ./kalshi_horizon_models --paper
+```
 
 ## What This Does
 
@@ -20,6 +66,58 @@ Predicts binary crypto contracts at **fixed time horizons** (T-60, T-30, T-15 mi
                                               └──────────────┘
 ```
 
+## Commands Reference
+
+### Data Collection
+```bash
+# Start collecting (runs in background)
+nohup python3 -u kalshi_stream.py --coinbase --interval 30 --horizons-only --log data.jsonl > stream.log 2>&1 &
+
+# Check status
+tail -f stream.log
+wc -l data.jsonl
+```
+
+### Training
+```bash
+# Label with settlement outcomes
+python3 kalshi_train.py backfill --data data.jsonl
+
+# Train separate horizon models (recommended)
+python3 kalshi_train.py separate-models --data data.labeled.jsonl --output-dir ./kalshi_horizon_models
+```
+
+### Trading
+```bash
+# Paper trading (no real money)
+python3 kalshi_trader.py --models-dir ./kalshi_horizon_models --paper
+
+# View trade history
+python3 kalshi_trader.py --show-trades trades.jsonl
+
+# Check status
+python3 kalshi_trader.py --status
+
+# Stop trading
+pkill -f kalshi_trader.py
+```
+
+### Validation
+```bash
+python3 phase3_validate.py --data data.labeled.jsonl
+python3 phase3_compare.py --before old.labeled.jsonl --after new.labeled.jsonl
+```
+
+## Trading Configuration
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--paper` | Yes | Paper trading mode (simulated) |
+| `--live` | No | Real money trading |
+| `--max-position` | $10 | Max USD per trade |
+| `--daily-limit` | -$50 | Stop if daily loss exceeds |
+| `--interval` | 30s | Seconds between market scans |
+
 ## Key Design Decisions
 
 | Decision | Why |
@@ -30,60 +128,27 @@ Predicts binary crypto contracts at **fixed time horizons** (T-60, T-30, T-15 mi
 | **Walk-forward validation** | No ticker overlap between train/test, simulates real deployment |
 | **Log loss over accuracy** | Probabilistic metric that rewards calibrated uncertainty |
 
-## Quick Start
-
-```bash
-# Install
-pip install aiohttp numpy scipy pandas scikit-learn xgboost joblib
-
-# Collect data (let run 2-3 hours)
-python kalshi_stream.py --coinbase --interval 30 --horizons-only --log data.jsonl
-
-# Label with outcomes
-python kalshi_train.py backfill --data data.jsonl
-
-# Train separate horizon models
-python kalshi_train.py separate-models \
-  --data data.labeled.jsonl \
-  --output-dir ./kalshi_horizon_models
-
-# Production inference
-python kalshi_inference.py --models-dir ./kalshi_horizon_models
-```
-
 ## Files
 
-### Core Pipeline
-
 | File | Purpose |
 |------|---------|
-| `kalshi_stream.py` | Horizon-aware data collection with best-candidate selection for T-60 |
-| `coinbase_price_source.py` | Hardened Coinbase WebSocket with microprice, imbalance, depth |
+| `kalshi_stream.py` | Horizon-aware data collection with best-candidate selection |
+| `coinbase_price_source.py` | Coinbase WebSocket with microprice, imbalance, depth |
 | `kalshi_train.py` | Training with separate models, walk-forward, risk-adjusted thresholds |
-| `kalshi_inference.py` | Production router: `if horizon == T-15: use t_15 elif T-60: use t_60` |
-
-### Validation
-
-| File | Purpose |
-|------|---------|
-| `phase3_validate.py` | Victory gates: offset, lookahead, ECE, PnL per horizon |
-| `phase3_compare.py` | Before/after scoreboard proving engineering changes work |
-| `validate_dataset.py` | Data integrity: no future data, proper dedup, buffer freshness |
-
-### Research
-
-| File | Purpose |
-|------|---------|
-| `microstructure_logger.py` | Per-second JSONL logging (spread, imbalance, microprice) |
+| `kalshi_inference.py` | Production router for horizon-specific predictions |
+| `kalshi_trader.py` | Paper/live trade execution with position tracking |
+| `phase3_validate.py` | Victory gates validation |
+| `start_trader.sh` | One-command startup script |
 
 ## Model Artifacts
 
+After training, `kalshi_horizon_models/` contains:
 ```
 kalshi_horizon_models/
 ├── t_15/
 │   ├── model.joblib           # XGBoost classifier
 │   ├── best_threshold.json    # Risk-adjusted threshold + policy
-│   ├── calibration.json       # ECE + bin-wise calibration curve
+│   ├── calibration.json       # ECE + calibration curve
 │   └── feature_stats.json     # Normalization stats
 ├── t_60/
 │   └── ...
@@ -92,141 +157,38 @@ kalshi_horizon_models/
 └── router_config.json         # Production routing logic
 ```
 
-## CLI Reference
-
-### Data Collection
+## Monitoring
 
 ```bash
-# Continuous horizon snapshots
-python kalshi_stream.py --coinbase --interval 30 --horizons-only --log data.jsonl
+# Live logs
+tail -f trader.log
 
-# Research: per-second microstructure
-python microstructure_logger.py --assets BTC ETH --duration 300
+# Trade history
+python3 kalshi_trader.py --show-trades trades.jsonl
+
+# Current status
+python3 kalshi_trader.py --status
+
+# Data collection progress
+wc -l training_data.jsonl && tail -3 stream.log
 ```
 
-### Training
+## Troubleshooting
 
+**No samples collecting?**
+- Samples only log at T-60, T-30, T-15 before market expiry
+- Check `tail -f stream.log` for connection status
+- Markets may be between horizons; wait for next cycle
+
+**Module not found errors?**
 ```bash
-# Fetch settlement outcomes
-python kalshi_train.py backfill --data data.jsonl
-
-# Train separate horizon models (recommended)
-python kalshi_train.py separate-models --data data.labeled.jsonl --output-dir ./models
-
-# Analyze T-60 offset impact
-python kalshi_train.py horizon --data data.labeled.jsonl --compare-offsets
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### Validation
-
-```bash
-# Check all victory gates
-python phase3_validate.py --data data.labeled.jsonl
-
-# Compare before/after datasets
-python phase3_compare.py --before old.labeled.jsonl --after new.labeled.jsonl
-```
-
-### Inference
-
-```bash
-# Demo with test data
-python kalshi_inference.py --models-dir ./kalshi_horizon_models --data test.jsonl
-```
-
-```python
-# Programmatic usage
-from kalshi_inference import HorizonRouter
-
-router = HorizonRouter("./kalshi_horizon_models")
-result = router.predict(features, horizon="T-60", market_price=0.55)
-
-print(f"Probability: {result.probability:.2%}")
-print(f"Trade: {result.trade} {result.direction}")  # True YES / True NO / False None
-print(f"Edge: {result.edge:.3f}")
-```
-
-## Evaluation Metrics
-
-Primary metrics compare model vs market baseline (yes_price as probability):
-
-```
-PROBABILISTIC EVALUATION
-════════════════════════════════════════════════════════════════
-  METRIC        │  MARKET    │  MODEL     │  DELTA
-────────────────┼────────────┼────────────┼─────────────────────
-  Log Loss      │  0.6534    │  0.6412    │  -0.0122 (BETTER)
-  Brier Score   │  0.2341    │  0.2298    │  -0.0043 (BETTER)
-  ECE           │  0.0623    │  0.0489    │  -0.0134 (BETTER)
-```
-
-Per-horizon threshold policy with robustness metrics:
-
-```
-T-60:
-  Thresh │ Trades │ Avg Edge │ Avg PnL  │ Max DD  │ Total PnL │ Risk Adj
-═════════╪════════╪══════════╪══════════╪═════════╪═══════════╪══════════
-   0.06  │    67  │  +0.028  │ $+0.012  │ $0.51   │ $+0.80    │ 1.31
-   0.08  │    45  │  +0.035  │ $+0.018  │ $0.42   │ $+0.81    │ 1.56 <<<
-   0.10  │    28  │  +0.041  │ $+0.022  │ $0.38   │ $+0.62    │ 1.29
-
-  BEST POLICY (by risk-adjusted score): threshold=0.08
-    Trades:        45
-    Win rate:      62.2%
-    Avg edge:      3.50% per trade
-    Max DD:        $0.42
-    Risk-adj:      1.56 (PnL/DD)
-```
-
-## Data Quality Invariants
-
-Enforced by `validate_dataset.py` and `phase3_validate.py`:
-
-| Invariant | Check |
-|-----------|-------|
-| No future data | `max_source_ts <= sample_ts` (100% pass required) |
-| No lookahead | `sample_ts >= target_ts` |
-| Buffer freshness | Settlement buffer age ≤ 65s |
-| Deduplication | One sample per (ticker, horizon) |
-| T-60 offset | Median ≤ 10s (goal: ≤ 5s) |
-| Fallback rate | T-60 fallbacks ≤ 30% |
-
-## Why Coinbase?
-
-Kalshi settles using **CF Benchmarks** indices calculated from constituent exchanges:
-- Coinbase, Kraken, Bitstamp, Gemini, LMAX Digital, Bullish
-
-The settlement proxy uses a 60-second rolling average of Coinbase mid price to approximate CF Benchmarks BRTI/ETHUSD_RTI.
-
-## Configuration
-
-### Horizon Settings (`kalshi_stream.py`)
-
-```python
-FIXED_HORIZONS = [60, 30, 15]       # Minutes before expiry
-T60_TOLERANCE_SEC = 45.0            # Wider window for T-60
-GOOD_ENOUGH_OFFSET_SEC = 5.0        # Finalize immediately if offset <= 5s
-BEST_CANDIDATE_HORIZONS = {60}      # Only T-60 uses best-candidate
-```
-
-### Threshold Selection
-
-```python
-risk_adj_score = total_pnl / (max_drawdown + 0.10)
-
-# Selection criteria:
-# - Minimum 5 trades
-# - Positive total PnL
-# - Max drawdown < 80% of total PnL
-# - Highest risk-adjusted score wins
-```
-
-### Walk-Forward Split
-
-```python
-train_pct = 0.70  # 70% train, 30% test by time
-# Grouped by ticker - NO ticker appears in both train and test
-```
+**Models not found?**
+- You need 500+ samples before training
+- Run training steps in Step 3 above
 
 ## License
 
