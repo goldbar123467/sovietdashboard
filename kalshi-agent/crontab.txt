@@ -1,0 +1,9 @@
+SHELL=/bin/bash
+# Set API keys in your .env file, not here
+# KALSHI_API_KEY=your-key
+# OPENROUTER_API_KEY=your-key
+# ANTHROPIC_API_KEY=your-key
+
+*/10 * * * * cd /home/clark/kalshi-agent && /home/clark/kalshi-agent/.venv/bin/python /home/clark/kalshi-agent/agent.py --live >> /home/clark/kalshi-agent/logs/cron.log 2>&1
+0 * * * * cd /home/clark/kalshi-agent && /home/clark/kalshi-agent/.venv/bin/python /home/clark/kalshi-agent/reviewer.py >> /home/clark/kalshi-agent/logs/cron.log 2>&1
+*/30 * * * * cd /home/clark/kalshi-agent && /home/clark/kalshi-agent/.venv/bin/python /home/clark/kalshi-agent/debugger.py >> /home/clark/kalshi-agent/logs/cron.log 2>&1
