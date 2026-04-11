@@ -26,6 +26,6 @@ state.json
 
 # Everything else in home dir
 /*
-!/kalshi-agent/
+!/Medieval26/
 !/.gitignore
 !/README.md

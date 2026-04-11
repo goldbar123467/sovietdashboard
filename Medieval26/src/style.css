@@ -1,0 +1,619 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #0a0a0f; font-family: Georgia, 'Times New Roman', serif; }
+canvas { display: block; }
+
+/* ─── Management Panel ─────────────────────────────── */
+#panel {
+  position: absolute;
+  top: 0; left: 0;
+  width: 320px; height: 100vh;
+  background: linear-gradient(180deg, #1e1810 0%, #151010 100%);
+  border-right: 2px solid #3a2e22;
+  color: #c9b896;
+  overflow-y: auto;
+  padding: 0;
+  z-index: 10;
+  user-select: none;
+}
+#panel::-webkit-scrollbar { width: 6px; }
+#panel::-webkit-scrollbar-track { background: #1a1410; }
+#panel::-webkit-scrollbar-thumb { background: #3a2e22; border-radius: 3px; }
+
+.panel-header {
+  padding: 16px;
+  background: linear-gradient(135deg, #2a1f14, #1a1410);
+  border-bottom: 1px solid #3a2e22;
+  text-align: center;
+}
+.panel-header h1 {
+  font-size: 16px;
+  color: #e8d5a3;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+.panel-header .meta {
+  font-size: 12px;
+  color: #8a7a60;
+  margin-top: 4px;
+}
+.panel-header .meta span { color: #d4a843; }
+
+.section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #6a5a44;
+  padding: 10px 16px 4px;
+  border-top: 1px solid #2a2018;
+}
+
+/* Knight cards */
+.knight-card {
+  padding: 10px 16px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.knight-card:hover { background: rgba(255,255,255,0.03); }
+.knight-card.selected {
+  background: rgba(212,168,67,0.08);
+  border-left-color: #d4a843;
+}
+.knight-card .name {
+  font-size: 14px;
+  color: #e0d0b0;
+  margin-bottom: 4px;
+}
+.knight-card .name .color-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.knight-card .stats {
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  color: #8a7a60;
+  line-height: 1.5;
+}
+.knight-card .stats .val { color: #c9b896; }
+.knight-card .stats .good { color: #7cb87c; }
+.knight-card .stats .mid { color: #c9b850; }
+.knight-card .stats .low { color: #b87c7c; }
+.knight-card .record { font-size: 11px; color: #6a5a44; }
+
+/* Opponent display */
+.opponent-card {
+  padding: 10px 16px;
+  background: rgba(180,50,50,0.06);
+  border-left: 3px solid #8b3030;
+}
+.opponent-card .name { font-size: 14px; color: #d4a0a0; margin-bottom: 4px; }
+.opponent-card .stats { font-size: 11px; font-family: 'Courier New', monospace; color: #8a6a6a; line-height: 1.5; }
+.opponent-card .stats .val { color: #c9a0a0; }
+
+/* Joust button */
+#joust-btn {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 12px 16px;
+  padding: 12px;
+  font-family: Georgia, serif;
+  font-size: 15px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #1a1410;
+  background: linear-gradient(135deg, #d4a843, #c49530);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+#joust-btn:hover { opacity: 0.9; }
+#joust-btn:active { transform: scale(0.98); }
+#joust-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+/* Match log */
+#match-log {
+  padding: 8px 16px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.log-entry { padding: 6px 0; border-bottom: 1px solid #1a1610; }
+.log-entry .round-num { color: #6a5a44; }
+.log-entry .narrative { color: #a09070; }
+.log-entry .result-win { color: #7cb87c; font-weight: bold; }
+.log-entry .result-loss { color: #b87c7c; font-weight: bold; }
+.log-entry .result-draw { color: #b8b87c; font-weight: bold; }
+.log-entry .result-missed { color: #887766; font-style: italic; }
+
+/* Hint */
+.hint { font-size: 10px; color: #4a3e30; text-align: center; padding: 6px; }
+
+/* ─── View Transition ─────────────────────────────── */
+#view-fade {
+  position: fixed;
+  top: 0; left: 320px;
+  right: 0; bottom: 0;
+  background: #0a0a0f;
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+#view-fade.active { opacity: 1; pointer-events: all; }
+
+/* ─── Map View ────────────────────────────────────── */
+#map-view {
+  position: absolute;
+  top: 0; left: 320px;
+  right: 0; bottom: 0;
+  z-index: 5;
+  overflow: hidden;
+  display: none;
+}
+#map-view.visible { display: block; }
+
+.map-parchment {
+  width: 100%; height: 100%;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(180,155,110,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 80%, rgba(140,115,75,0.12) 0%, transparent 50%),
+    linear-gradient(160deg, #d4c4a0 0%, #c9b88e 25%, #bfad7e 50%, #c4b48a 75%, #d0bf95 100%);
+  position: relative;
+}
+
+.map-parchment::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(120,100,60,0.03) 3px, rgba(120,100,60,0.03) 4px),
+    repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(100,80,40,0.02) 5px, rgba(100,80,40,0.02) 6px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.map-parchment::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow:
+    inset 0 0 80px rgba(80,55,20,0.4),
+    inset 0 0 200px rgba(60,40,10,0.2);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Calendar bar */
+.map-calendar {
+  position: absolute;
+  top: 16px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: linear-gradient(135deg, rgba(45,32,18,0.92), rgba(35,24,12,0.95));
+  border: 1px solid #5a4a30;
+  border-radius: 6px;
+  padding: 10px 24px;
+  text-align: center;
+  color: #c9b896;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.map-calendar .season-title {
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #e8d5a3;
+}
+.map-calendar .day-display {
+  font-size: 12px;
+  color: #8a7a60;
+  margin-top: 4px;
+}
+.map-calendar .day-display span { color: #d4a843; font-weight: bold; }
+.map-calendar .treasury-display {
+  font-size: 12px;
+  color: #8a7a60;
+  margin-top: 2px;
+}
+.map-calendar .treasury-display span { color: #d4a843; }
+
+/* Season progress bar */
+.season-bar {
+  margin-top: 8px;
+  width: 240px;
+  height: 6px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.season-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7cb87c, #d4a843, #b87c7c);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+/* SVG map container */
+.map-svg-container {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.map-svg-container svg {
+  max-width: 90%;
+  max-height: 90%;
+  filter: drop-shadow(2px 3px 6px rgba(60,40,10,0.3));
+}
+
+/* Tournament markers */
+.tournament-marker {
+  cursor: pointer;
+}
+.tournament-marker .marker-hit-area {
+  fill: transparent;
+  stroke: none;
+}
+.tournament-marker:hover .marker-glow {
+  opacity: 0.5;
+}
+.tournament-marker.missed {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+.tournament-marker.attended {
+  opacity: 0.6;
+  cursor: default;
+  pointer-events: none;
+}
+/* GB county paths */
+.gb-county {
+  pointer-events: none;
+}
+/* Text labels don't capture clicks — only circles do */
+.tournament-marker text,
+.tournament-marker line,
+.tournament-marker path {
+  pointer-events: none;
+}
+
+/* Hover tooltip */
+.map-tooltip {
+  position: absolute;
+  z-index: 20;
+  background: rgba(35,25,12,0.94);
+  border: 1px solid #5a4a30;
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: #c9b896;
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.map-tooltip.visible { opacity: 1; }
+.map-tooltip .tt-name { color: #e8d5a3; font-weight: bold; }
+.map-tooltip .tt-day { color: #8a7a60; }
+
+/* Tournament detail panel */
+#tournament-detail {
+  position: absolute;
+  top: 80px; right: 20px;
+  width: 260px;
+  z-index: 15;
+  background: linear-gradient(135deg, rgba(40,28,14,0.96), rgba(30,20,10,0.98));
+  border: 1px solid #5a4a30;
+  border-radius: 6px;
+  padding: 20px;
+  color: #c9b896;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  display: none;
+}
+#tournament-detail.visible { display: block; }
+
+#tournament-detail .td-name {
+  font-size: 16px;
+  color: #e8d5a3;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #3a2e22;
+  padding-bottom: 8px;
+}
+#tournament-detail .td-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin: 6px 0;
+}
+#tournament-detail .td-label { color: #8a7a60; }
+#tournament-detail .td-value { color: #d4a843; }
+#tournament-detail .td-stars { color: #d4a843; letter-spacing: 2px; }
+
+#tournament-detail .td-opponent {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #3a2e22;
+}
+#tournament-detail .td-opponent .opp-name {
+  font-size: 13px;
+  color: #d4a0a0;
+  margin-bottom: 4px;
+}
+#tournament-detail .td-opponent .opp-stats {
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  color: #8a6a6a;
+  line-height: 1.5;
+}
+
+#travel-btn {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  font-family: Georgia, serif;
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #1a1410;
+  background: linear-gradient(135deg, #d4a843, #c49530);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+#travel-btn:hover { opacity: 0.9; }
+#travel-btn:active { transform: scale(0.98); }
+#travel-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+.td-travel-info {
+  font-size: 11px;
+  color: #6a5a44;
+  text-align: center;
+  margin-top: 6px;
+}
+
+.td-status-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 10px;
+}
+.td-status-badge.missed { background: rgba(180,100,80,0.2); color: #b87c7c; }
+.td-status-badge.attended-win { background: rgba(100,180,100,0.2); color: #7cb87c; }
+.td-status-badge.attended-loss { background: rgba(180,100,80,0.2); color: #b87c7c; }
+.td-status-badge.attended-draw { background: rgba(180,180,100,0.2); color: #b8b87c; }
+
+#close-detail-btn {
+  position: absolute;
+  top: 8px; right: 10px;
+  background: none;
+  border: none;
+  color: #6a5a44;
+  font-size: 18px;
+  cursor: pointer;
+  line-height: 1;
+}
+#close-detail-btn:hover { color: #c9b896; }
+
+/* ─── Season Summary ──────────────────────────────── */
+#season-summary {
+  position: fixed;
+  top: 0; left: 320px;
+  right: 0; bottom: 0;
+  z-index: 60;
+  background: rgba(10,10,15,0.92);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+#season-summary.visible { display: flex; }
+
+.summary-card {
+  background: linear-gradient(135deg, #2a1f14, #1a1410);
+  border: 2px solid #5a4a30;
+  border-radius: 8px;
+  padding: 32px 40px;
+  color: #c9b896;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.5);
+}
+.summary-card h2 {
+  font-size: 20px;
+  color: #e8d5a3;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+.summary-card .summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  margin: 10px 0;
+  padding: 6px 0;
+  border-bottom: 1px solid #2a2018;
+}
+.summary-card .summary-label { color: #8a7a60; }
+.summary-card .summary-value { color: #d4a843; font-weight: bold; }
+.summary-card .summary-value.negative { color: #b87c7c; }
+
+.summary-knights {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #3a2e22;
+  text-align: left;
+}
+.summary-knights h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #6a5a44;
+  margin-bottom: 8px;
+}
+.summary-knight-row {
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  color: #8a7a60;
+  line-height: 1.8;
+}
+
+#new-season-btn {
+  display: block;
+  width: 100%;
+  margin-top: 24px;
+  padding: 14px;
+  font-family: Georgia, serif;
+  font-size: 16px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #1a1410;
+  background: linear-gradient(135deg, #d4a843, #c49530);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+#new-season-btn:hover { opacity: 0.9; }
+#new-season-btn:active { transform: scale(0.98); }
+
+/* ─── First-Person Joust Mini-Game HUD ───────────── */
+#minigame-hud {
+  position: fixed;
+  top: 0; left: 320px;
+  right: 0; bottom: 0;
+  z-index: 40;
+  pointer-events: none;
+  display: none;
+}
+
+#mg-round-display {
+  position: absolute;
+  top: 24px; left: 50%;
+  transform: translateX(-50%);
+  font-family: Georgia, serif;
+  font-size: 22px;
+  color: #e8d5a3;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+#mg-round-display.visible { opacity: 1; }
+
+#mg-score-display {
+  position: absolute;
+  top: 58px; left: 50%;
+  transform: translateX(-50%);
+  font-family: Georgia, serif;
+  font-size: 18px;
+  color: #d4a843;
+  letter-spacing: 3px;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+}
+
+#mg-crosshair {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 36px; height: 36px;
+  margin: -18px 0 0 -18px;
+  border: 2px solid rgba(212,168,67,0.6);
+  border-radius: 50%;
+  transition: transform 0.05s linear, border-color 0.15s;
+}
+#mg-crosshair.blocking {
+  border-color: rgba(100,180,220,0.8);
+  border-width: 3px;
+  width: 48px; height: 48px;
+  margin: -24px 0 0 -24px;
+  background: rgba(100,180,220,0.08);
+}
+#mg-crosshair-dot {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 4px; height: 4px;
+  margin: -2px 0 0 -2px;
+  background: #d4a843;
+  border-radius: 50%;
+}
+
+#mg-aim-guide {
+  position: absolute;
+  right: 36px; top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.aim-zone {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: #5a4a34;
+  padding: 5px 10px;
+  border: 1px solid #3a2e22;
+  border-radius: 3px;
+  text-align: center;
+  letter-spacing: 1px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.aim-zone.active {
+  color: #e8d5a3;
+  border-color: #d4a843;
+  background: rgba(212,168,67,0.12);
+}
+
+#mg-block-indicator {
+  position: absolute;
+  bottom: 90px; left: 50%;
+  transform: translateX(-50%);
+  font-family: Georgia, serif;
+  font-size: 15px;
+  color: rgba(100,180,220,0.9);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+#mg-block-indicator.visible { opacity: 1; }
+
+#mg-action-text {
+  position: absolute;
+  top: 38%; left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: Georgia, serif;
+  font-size: 52px;
+  color: #e8d5a3;
+  text-transform: uppercase;
+  letter-spacing: 5px;
+  text-shadow:
+    0 0 20px rgba(212,168,67,0.4),
+    0 4px 16px rgba(0,0,0,0.9);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+#mg-action-text.visible { opacity: 1; }
+
+#mg-controls-hint {
+  position: absolute;
+  bottom: 20px; left: 50%;
+  transform: translateX(-50%);
+  font-family: Georgia, serif;
+  font-size: 11px;
+  color: #5a4a34;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}

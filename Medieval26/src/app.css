@@ -1,0 +1,397 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════════════
+   MEDIEVAL THEME — Tournament House
+   ═══════════════════════════════════════════════════════════ */
+
+@theme {
+  /* Background layers — deep midnight navy */
+  --color-bg-deep: #0a0d14;
+  --color-bg-base: #111827;
+  --color-bg-card: #1a2035;
+  --color-bg-elevated: #212942;
+  --color-bg-hover: #2a3350;
+
+  /* Gold hierarchy — warm ivory/cream with heraldic gold accent */
+  --color-gold-dim: #a09080;
+  --color-gold-base: #ddd0b8;
+  --color-gold-bright: #f0e6d0;
+  --color-gold-accent: #d4a020;
+  --color-gold-shine: #f0c840;
+
+  /* Borders — blue-slate */
+  --color-border-subtle: #1e2740;
+  --color-border-base: #2d3a55;
+  --color-border-strong: #3d4f70;
+  --color-border-gold: #d4a020;
+
+  /* Stat colors — stained-glass vibrance */
+  --color-stat-good: #4caf6a;
+  --color-stat-mid: #e0b840;
+  --color-stat-low: #c04040;
+
+  /* Semantic */
+  --color-danger: #8b2020;
+  --color-danger-text: #e8a0a0;
+  --color-success: #2d7a3d;
+  --color-info: #5090c0;
+
+  /* Parchment (map only — stays warm) */
+  --color-parchment-light: #e0d4b8;
+  --color-parchment-base: #d4c8a8;
+  --color-parchment-dark: #c8bc98;
+
+  /* Spacing */
+  --spacing-panel: 320px;
+
+  /* Fonts */
+  --font-heading: 'Cinzel', 'Georgia', serif;
+  --font-body: 'Cormorant Garamond', 'Georgia', serif;
+  --font-mono: 'JetBrains Mono', 'Courier New', monospace;
+
+  /* Animations */
+  --animate-glow: glow 3s ease-in-out infinite;
+  --animate-flicker: flicker 4s ease-in-out infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-fade-in: fadeIn 0.4s ease-out;
+  --animate-slide-up: slideUp 0.3s ease-out;
+  --animate-slide-in-right: slideInRight 0.3s ease-out;
+}
+
+@keyframes glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.15); }
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  25% { opacity: 0.95; }
+  50% { opacity: 1; }
+  75% { opacity: 0.92; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ─── Base Reset ──────────────────────────────────── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg-deep);
+  font-family: var(--font-body);
+  color: var(--color-gold-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Custom Scrollbar ────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bg-base); }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-base);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-strong); }
+
+/* ─── Ornamental Patterns ─────────────────────────── */
+.ornament-border {
+  border-image: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--color-border-strong) 20%,
+    var(--color-gold-accent) 50%,
+    var(--color-border-strong) 80%,
+    transparent 100%
+  ) 1;
+}
+
+.parchment-bg {
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(80,110,180,0.06) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 80%, rgba(60,90,160,0.04) 0%, transparent 50%),
+    linear-gradient(160deg, var(--color-bg-base) 0%, var(--color-bg-deep) 50%, #080a10 100%);
+}
+
+.torch-glow {
+  box-shadow:
+    0 0 60px rgba(212, 160, 32, 0.08),
+    0 0 120px rgba(180, 130, 40, 0.04);
+}
+
+/* Gold shimmer text effect */
+.text-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-gold-base) 0%,
+    var(--color-gold-shine) 25%,
+    var(--color-gold-accent) 50%,
+    var(--color-gold-shine) 75%,
+    var(--color-gold-base) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 3s linear infinite;
+}
+
+/* Gothic pointed arch card top */
+.gothic-arch::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--color-gold-accent),
+    transparent
+  );
+  border-radius: 0 0 50% 50%;
+}
+
+/* Wax seal decoration */
+.wax-seal {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%,
+    #c44040 0%,
+    #8b2020 40%,
+    #6a1515 70%,
+    #4a0e0e 100%
+  );
+  box-shadow:
+    0 2px 8px rgba(0,0,0,0.5),
+    inset 0 -2px 4px rgba(0,0,0,0.3),
+    inset 0 2px 4px rgba(255,100,100,0.15);
+}
+
+/* Chain pattern divider */
+.chain-divider {
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 4px,
+    var(--color-border-base) 4px,
+    var(--color-border-base) 8px,
+    transparent 8px,
+    transparent 12px
+  );
+}
+
+/* Illuminated letter */
+.illuminated::first-letter {
+  font-family: var(--font-heading);
+  font-size: 2em;
+  float: left;
+  color: var(--color-gold-accent);
+  line-height: 1;
+  margin-right: 4px;
+  text-shadow: 0 0 8px rgba(212, 160, 32, 0.4);
+}
+
+/* ─── Map Styles (preserved from original) ────────── */
+.map-parchment {
+  width: 100%; height: 100%;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(180,155,110,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse at 70% 80%, rgba(140,115,75,0.12) 0%, transparent 50%),
+    linear-gradient(160deg, #d4c4a0 0%, #c9b88e 25%, #bfad7e 50%, #c4b48a 75%, #d0bf95 100%);
+  position: relative;
+}
+.map-parchment::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(120,100,60,0.03) 3px, rgba(120,100,60,0.03) 4px),
+    repeating-linear-gradient(90deg, transparent, transparent 5px, rgba(100,80,40,0.02) 5px, rgba(100,80,40,0.02) 6px);
+  pointer-events: none;
+  z-index: 1;
+}
+.map-parchment::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow:
+    inset 0 0 80px rgba(80,55,20,0.4),
+    inset 0 0 200px rgba(60,40,10,0.2);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Map UI elements */
+.map-back-btn {
+  position: absolute;
+  top: 16px; left: 16px;
+  z-index: 15;
+  padding: 8px 14px;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  color: var(--color-gold-base);
+  background: rgba(15,20,35,0.92);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.map-back-btn:hover { background: rgba(25,32,50,0.95); }
+
+.map-calendar {
+  position: absolute;
+  top: 16px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  background: linear-gradient(135deg, rgba(20,28,48,0.92), rgba(15,20,35,0.95));
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  padding: 10px 24px;
+  text-align: center;
+  color: var(--color-gold-base);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+.map-calendar .season-title {
+  font-size: 14px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--color-gold-bright);
+  font-family: var(--font-heading);
+}
+.map-calendar .day-display { font-size: 12px; color: var(--color-gold-dim); margin-top: 4px; }
+.map-calendar .day-display span { color: var(--color-gold-accent); font-weight: bold; }
+.map-calendar .treasury-display { font-size: 12px; color: var(--color-gold-dim); margin-top: 2px; }
+.map-calendar .treasury-display span { color: var(--color-gold-accent); }
+.season-bar {
+  margin-top: 8px; width: 240px; height: 6px;
+  background: rgba(0,0,0,0.3); border-radius: 3px; overflow: hidden;
+}
+.season-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-stat-good), var(--color-gold-accent), var(--color-stat-low));
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.map-svg-container {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+}
+.map-svg-container svg {
+  max-width: 90%; max-height: 90%;
+  filter: drop-shadow(2px 3px 6px rgba(60,40,10,0.3));
+}
+
+.tournament-marker { cursor: pointer; }
+.tournament-marker .marker-hit-area { fill: transparent; stroke: none; }
+.tournament-marker:hover .marker-glow { opacity: 0.5; }
+.tournament-marker.missed { opacity: 0.4; cursor: default; }
+.tournament-marker.attended { opacity: 0.6; pointer-events: none; }
+.gb-county { pointer-events: none; }
+.tournament-marker text, .tournament-marker line { pointer-events: none; }
+
+.map-tooltip {
+  position: absolute; z-index: 20;
+  background: rgba(15,20,35,0.94);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 4px; padding: 6px 10px;
+  color: var(--color-gold-base); font-size: 12px;
+  pointer-events: none; opacity: 0;
+  transition: opacity 0.15s; white-space: nowrap;
+}
+.map-tooltip.visible { opacity: 1; }
+.map-tooltip .tt-name { color: var(--color-gold-bright); font-weight: bold; }
+.map-tooltip .tt-day { color: var(--color-gold-dim); }
+
+#tournament-detail {
+  position: absolute; top: 80px; right: 20px;
+  width: 260px; z-index: 15;
+  background: linear-gradient(135deg, rgba(18,25,42,0.96), rgba(12,18,32,0.98));
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px; padding: 20px;
+  color: var(--color-gold-base);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  display: none;
+}
+#tournament-detail.visible { display: block; }
+#tournament-detail .td-name {
+  font-size: 16px; color: var(--color-gold-bright);
+  letter-spacing: 1px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--color-border-base);
+  padding-bottom: 8px; font-family: var(--font-heading);
+}
+#tournament-detail .td-row {
+  display: flex; justify-content: space-between;
+  font-size: 12px; margin: 6px 0;
+}
+#tournament-detail .td-label { color: var(--color-gold-dim); }
+#tournament-detail .td-value { color: var(--color-gold-accent); }
+#tournament-detail .td-stars { color: var(--color-gold-accent); letter-spacing: 2px; }
+#tournament-detail .td-opponent { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--color-border-base); }
+#tournament-detail .td-opponent .opp-name { font-size: 13px; color: var(--color-danger-text); margin-bottom: 4px; }
+#tournament-detail .td-opponent .opp-stats { font-size: 11px; font-family: var(--font-mono); color: #8a6a6a; line-height: 1.5; }
+#travel-btn {
+  display: block; width: 100%; margin-top: 16px; padding: 10px;
+  font-family: var(--font-heading); font-size: 14px;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: #1a1410;
+  background: linear-gradient(135deg, var(--color-gold-accent), #c49530);
+  border: none; border-radius: 4px; cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+#travel-btn:hover { opacity: 0.9; }
+#travel-btn:active { transform: scale(0.98); }
+#travel-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+.td-travel-info { font-size: 11px; color: var(--color-gold-dim); text-align: center; margin-top: 6px; }
+.td-status-badge {
+  display: inline-block; padding: 3px 8px; border-radius: 3px;
+  font-size: 11px; font-weight: bold; letter-spacing: 1px;
+  text-transform: uppercase; margin-top: 10px;
+}
+.td-status-badge.missed { background: rgba(180,100,80,0.2); color: var(--color-stat-low); }
+.td-status-badge.attended-win { background: rgba(100,180,100,0.2); color: var(--color-stat-good); }
+.td-status-badge.attended-loss { background: rgba(180,100,80,0.2); color: var(--color-stat-low); }
+.td-status-badge.attended-draw { background: rgba(180,180,100,0.2); color: var(--color-stat-mid); }
+#close-detail-btn {
+  position: absolute; top: 8px; right: 10px;
+  background: none; border: none; color: var(--color-gold-dim);
+  font-size: 18px; cursor: pointer; line-height: 1;
+}
+#close-detail-btn:hover { color: var(--color-gold-base); }
+
+/* ─── View Transition Fade ────────────────────────── */
+#view-fade {
+  position: fixed; top: 0; left: 320px; right: 0; bottom: 0;
+  background: var(--color-bg-deep);
+  z-index: 50; opacity: 0; pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+#view-fade.active { opacity: 1; pointer-events: all; }
