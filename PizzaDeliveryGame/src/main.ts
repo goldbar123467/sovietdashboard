@@ -46,7 +46,7 @@ function rebuild(): void {
   debugOverlay.visible = false;
   scene.add(debugOverlay);
 
-  seedEl.textContent = `Seed: ${seed} | D=debug | R=rebuild`;
+  seedEl.textContent = `Seed: ${seed} | \`=debug | G=rebuild`;
 }
 
 rebuild();
@@ -56,7 +56,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === DEBUG_KEY) {
     debugOverlay.visible = !debugOverlay.visible;
   }
-  if (e.code === 'KeyR') {
+  if (e.code === 'KeyG') {
     seed = Math.floor(Math.random() * 100000);
     rebuild();
   }

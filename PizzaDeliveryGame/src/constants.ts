@@ -1,7 +1,7 @@
 // Grid & world geometry
 export const TILE_SIZE = 11.37;
-export const DEFAULT_GRID_WIDTH = 18;
-export const DEFAULT_GRID_HEIGHT = 18;
+export const DEFAULT_GRID_WIDTH = 24;
+export const DEFAULT_GRID_HEIGHT = 24;
 
 // Building dimensions
 export const STORY_HEIGHT = 3;
@@ -17,7 +17,7 @@ export const CAMERA_START_Y = 150;
 export const CAMERA_PITCH_DEG = 60;
 
 // Debug
-export const DEBUG_KEY = 'KeyD';
+export const DEBUG_KEY = 'Backquote';
 
 // Zone distance thresholds (grid cells from center)
 export const DOWNTOWN_RADIUS = 4;
