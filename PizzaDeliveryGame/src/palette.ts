@@ -1,9 +1,15 @@
 import * as THREE from 'three';
+import {
+  createTripMaterial,
+  createEmissiveTripMaterial,
+  type TripUniforms,
+} from './tripShader';
 
 export interface PaletteAtlas {
   texture: THREE.DataTexture;
-  mainMaterial: THREE.MeshLambertMaterial;
-  emissiveMaterial: THREE.MeshBasicMaterial;
+  mainMaterial: THREE.ShaderMaterial;
+  emissiveMaterial: THREE.ShaderMaterial;
+  uniforms: TripUniforms;
   uvForIndex(index: number): [number, number];
   setFaceUV(
     uvAttr: THREE.BufferAttribute,
@@ -133,8 +139,8 @@ export function createPalette(): PaletteAtlas {
   texture.minFilter = THREE.NearestFilter;
   texture.needsUpdate = true;
 
-  const mainMaterial = new THREE.MeshLambertMaterial({ map: texture });
-  const emissiveMaterial = new THREE.MeshBasicMaterial({ map: texture });
+  const { material: mainMaterial, uniforms } = createTripMaterial(texture);
+  const { material: emissiveMaterial } = createEmissiveTripMaterial(texture);
 
   function uvForIndex(index: number): [number, number] {
     const col = index % SIZE;
@@ -153,5 +159,5 @@ export function createPalette(): PaletteAtlas {
     }
   }
 
-  return { texture, mainMaterial, emissiveMaterial, uvForIndex, setFaceUV };
+  return { texture, mainMaterial, emissiveMaterial, uniforms, uvForIndex, setFaceUV };
 }
