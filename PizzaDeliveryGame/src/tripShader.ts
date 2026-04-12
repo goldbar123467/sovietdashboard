@@ -94,6 +94,41 @@ void main() {
 
   vec3 color = texColor.rgb * (ambient + diffuse);
 
+  // Window grid — only above ground floor (worldPos.y > 3.0)
+  if (vWorldPosition.y > 3.0) {
+    // Tile windows every 2.5m horizontally, 3.0m vertically
+    vec2 windowCell = floor(vec2(vWorldPosition.x / 2.5, vWorldPosition.y / 3.0));
+
+    // Hash to determine lit/dark
+    float windowHash = fract(sin(dot(windowCell, vec2(12.9898, 78.233))) * 43758.5453);
+
+    // Determine if this pixel is within the "window" part of the cell
+    vec2 cellFrac = fract(vec2(vWorldPosition.x / 2.5, vWorldPosition.y / 3.0));
+    // Window occupies the center 60% of each cell
+    bool inWindow = cellFrac.x > 0.2 && cellFrac.x < 0.8 && cellFrac.y > 0.2 && cellFrac.y < 0.8;
+
+    if (inWindow) {
+      bool isLit = windowHash > 0.6;
+
+      // Trip flicker: at high intensity, windows randomly toggle
+      if (uTripIntensity > 0.3) {
+        float flicker = fract(sin(dot(windowCell + floor(uTime * 2.0), vec2(43.331, 17.892))) * 28947.12);
+        if (flicker < uTripIntensity * 0.1) {
+          isLit = !isLit;
+        }
+      }
+
+      if (isLit) {
+        // Warm yellow window light
+        vec3 windowColor = vec3(1.0, 0.95, 0.7);
+        color = mix(color, windowColor, 0.7);
+      } else {
+        // Dark window — slightly darker than wall
+        color *= 0.7;
+      }
+    }
+  }
+
   // Phase 2: palette LUT shift toward vaporwave
   if (uTripIntensity > 0.0) {
     vec3 hsv = rgb2hsv(color);
@@ -267,4 +302,20 @@ export function triggerDissolve(
   }
 
   requestAnimationFrame(tick);
+}
+
+/* ---------- signage material (basic textured, no trip FX) ---------- */
+
+/**
+ * Creates a basic textured material for signage decals.
+ * No trip effects — just transparent texture rendering.
+ */
+export function createSignageMaterial(
+  texture: THREE.Texture,
+): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    alphaTest: 0.5,
+  });
 }
