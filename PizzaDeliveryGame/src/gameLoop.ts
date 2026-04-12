@@ -28,6 +28,7 @@ import { createWaypointArrow } from './waypoint';
 import type { WaypointArrow } from './waypoint';
 import { calculateDeliveryScore, calculateRunTotal } from './scoring';
 import type { DeliveryScore } from './scoring';
+import { triggerDissolve } from './tripShader';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -336,12 +337,15 @@ export function createGameLoop(): GameLoop {
             return;
           }
 
-          // Rebuild city at delivery 3 and 6
+          // Dissolve + rebuild city at delivery 3 and 6
           if (loop.deliveryCount === 3 || loop.deliveryCount === 6) {
-            currentSeed = Math.floor(Math.random() * 100000);
-            rebuildCity(boot, currentSeed);
-            rng = createPRNG(currentSeed);
-            respawnShrooms();
+            const bootRef = boot;
+            triggerDissolve(boot.uniforms, () => {
+              currentSeed = Math.floor(Math.random() * 100000);
+              rebuildCity(bootRef, currentSeed);
+              rng = createPRNG(currentSeed);
+              respawnShrooms();
+            });
           }
 
           // Place next delivery
@@ -391,6 +395,9 @@ export function createGameLoop(): GameLoop {
       // 10. Update delivery progress
       loop.deliveryProgress = loop.deliveryCount / TOTAL_DELIVERIES;
       boot.uniforms.uDeliveryProgress.value = loop.deliveryProgress;
+
+      // 10b. Update sky gradient to match delivery progress
+      boot.sky.update(loop.deliveryProgress);
 
       // 11. Update audio
       audio.setThrottle(scooter.speed / 12);

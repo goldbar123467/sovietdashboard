@@ -68,9 +68,15 @@ export function createWaypointArrow(scene: THREE.Scene): WaypointArrow {
 
     currentYaw += delta * Math.min(1, LERP_SPEED * dt);
 
-    group.rotation.y = currentYaw;
+    // Arrow drift at high trip — the ONLY gameplay-affecting trip effect
+    let targetAngle = currentYaw;
+    if (_tripIntensity > 0) {
+      const time = performance.now() / 1000;
+      const drift = (Math.sin(time * 1.7) * 0.3 + Math.sin(time * 3.1) * 0.2) * _tripIntensity * (30 * Math.PI / 180);
+      targetAngle += drift;
+    }
 
-    // Phase 2: tripIntensity could add wobble/drift here
+    group.rotation.y = targetAngle;
   }
 
   return { group, update };

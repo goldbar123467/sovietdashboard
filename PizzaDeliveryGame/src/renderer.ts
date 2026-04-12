@@ -19,6 +19,7 @@ export interface BootResult {
   renderer: THREE.WebGLRenderer;
   city: CityResult;
   uniforms: TripUniforms;
+  sky: { mesh: THREE.Mesh; update(deliveryProgress: number): void };
 }
 
 /* ------------------------------------------------------------------ */
@@ -61,7 +62,7 @@ export function bootScene(seed: number): BootResult {
   // Uniforms from the singleton palette (shared across rebuilds)
   const uniforms = city.palette.uniforms;
 
-  return { scene, camera, renderer, city, uniforms };
+  return { scene, camera, renderer, city, uniforms, sky };
 }
 
 /* ------------------------------------------------------------------ */
