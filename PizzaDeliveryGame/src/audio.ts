@@ -117,7 +117,7 @@ export function createAudioManager(): AudioManager {
     if (!ctx || !masterGain) return;
 
     engineGain = ctx.createGain();
-    engineGain.gain.value = 0.15;
+    engineGain.gain.value = 0.12;
 
     engineFilter = ctx.createBiquadFilter();
     engineFilter.type = 'lowpass';
@@ -189,7 +189,7 @@ export function createAudioManager(): AudioManager {
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.4, now + 0.01); // quick attack
+    gain.gain.linearRampToValueAtTime(0.35, now + 0.01); // quick attack
     gain.gain.linearRampToValueAtTime(0, now + 0.3);    // fast decay
 
     source.connect(filter);
@@ -214,7 +214,7 @@ export function createAudioManager(): AudioManager {
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.2, now + 0.01);
+    gain.gain.linearRampToValueAtTime(0.15, now + 0.01);
     gain.gain.linearRampToValueAtTime(0, now + 0.15);
 
     source.connect(filter);
@@ -225,7 +225,7 @@ export function createAudioManager(): AudioManager {
     source.stop(now + 0.15);
   }
 
-  /** Play a shroom pickup — rising 3-note arpeggio (A4, C#5, E5). */
+  /** Play a shroom pickup — rising 3-note arpeggio (A4, C#5, E5) with sparkle shimmer. */
   function playShroom(): void {
     if (!ctx || !masterGain) return;
     const now = ctx.currentTime;
@@ -252,27 +252,53 @@ export function createAudioManager(): AudioManager {
       osc.start(now + offset);
       osc.stop(now + offset + 0.08);
     }
+
+    // Sparkle shimmer: quiet high-frequency sine sweep after the arpeggio
+    const shimmerStart = 0.20; // starts after last arpeggio note fades
+    const shimmerDuration = 0.2;
+    const shimmerOsc = ctx.createOscillator();
+    shimmerOsc.type = 'sine';
+    shimmerOsc.frequency.setValueAtTime(2000, now + shimmerStart);
+    shimmerOsc.frequency.linearRampToValueAtTime(4000, now + shimmerStart + shimmerDuration);
+
+    const shimmerGain = ctx.createGain();
+    shimmerGain.gain.setValueAtTime(0, now + shimmerStart);
+    shimmerGain.gain.linearRampToValueAtTime(0.1, now + shimmerStart + 0.02);
+    shimmerGain.gain.linearRampToValueAtTime(0, now + shimmerStart + shimmerDuration);
+
+    shimmerOsc.connect(shimmerGain);
+    shimmerGain.connect(masterGain!);
+
+    shimmerOsc.start(now + shimmerStart);
+    shimmerOsc.stop(now + shimmerStart + shimmerDuration);
   }
 
-  /** Play a voice blip — quick square wave pulse. */
+  /** Play a voice blip — two quick square wave pulses for a "talking pizza" feel. */
   function playVoiceBlip(): void {
     if (!ctx || !masterGain) return;
     const now = ctx.currentTime;
 
-    const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = 220;
+    const blips: [number, number][] = [
+      [220, 0],     // first blip
+      [260, 0.05],  // second blip, slightly higher pitch
+    ];
 
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.15, now + 0.005);
-    gain.gain.linearRampToValueAtTime(0, now + 0.05);
+    for (const [freq, offset] of blips) {
+      const osc = ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.value = freq;
 
-    osc.connect(gain);
-    gain.connect(masterGain!);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, now + offset);
+      gain.gain.linearRampToValueAtTime(0.12, now + offset + 0.005);
+      gain.gain.linearRampToValueAtTime(0, now + offset + 0.04);
 
-    osc.start(now);
-    osc.stop(now + 0.05);
+      osc.connect(gain);
+      gain.connect(masterGain!);
+
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.04);
+    }
   }
 
   // ------------------------------------------
@@ -335,7 +361,7 @@ export function createAudioManager(): AudioManager {
 
     // Quiet gain
     musicGain = ctx.createGain();
-    musicGain.gain.value = 0.08;
+    musicGain.gain.value = 0.06;
 
     // LFO for "breathing" modulation on gain
     musicLfo = ctx.createOscillator();
