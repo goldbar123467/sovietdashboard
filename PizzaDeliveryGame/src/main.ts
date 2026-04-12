@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { bootScene } from './renderer';
 import { createScooter } from './scooter';
 import { createInputHandler } from './input';
-import { updateChaseCamera } from './camera';
+import { updateChaseCamera, triggerCameraShake } from './camera';
 import { createDebugOverlay } from './debug';
 import { gridToWorld } from './grid';
 import { createGameLoop } from './gameLoop';
@@ -55,9 +55,10 @@ gameLoop.init(boot, scooterResult.state, scooterResult.mesh, scooterResult.event
 const hud = createHUD();
 hud.showTitleScreen(true);
 
-// Wire game events to HUD
+// Wire game events to HUD + camera effects
 gameLoop.onEvent = (event) => {
   hud.onEvent(event, camera, renderer);
+  if (event.type === 'wipeout') triggerCameraShake();
 };
 
 /* ------------------------------------------------------------------ */
@@ -117,7 +118,7 @@ let lastTime = performance.now();
   }
 
   // Camera follows scooter regardless of state
-  updateChaseCamera(camera, scooterResult.state, dt);
+  updateChaseCamera(camera, scooterResult.state, dt, gameLoop.tripIntensity);
 
   // Update HUD every frame (handles visibility per game state)
   hud.update(gameLoop);
