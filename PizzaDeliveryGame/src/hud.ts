@@ -4,6 +4,8 @@
 
 import * as THREE from 'three';
 import type { GameLoop, GameEvent, GameState } from './gameLoop';
+import { createDialogueSystem } from './dialogue';
+import type { DialogueSystem } from './dialogue';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -294,6 +296,10 @@ export function createHUD(): HUD {
 
   container.appendChild(scoreOverlay);
 
+  /* ---- Dialogue system ---- */
+  const dialogueSystem: DialogueSystem = createDialogueSystem();
+  let _lastTime = performance.now();
+
   /* ---- Track last-known state for visibility toggling ---- */
   let lastState: GameState | null = null;
 
@@ -393,6 +399,15 @@ export function createHUD(): HUD {
         el.style.color = textColor;
         el.style.textShadow = textShadow;
       }
+
+      // --- Dialogue system tick ---
+      const now = performance.now();
+      const dt = (now - _lastTime) / 1000;
+      _lastTime = now;
+
+      if (gameLoop.state === 'playing') {
+        dialogueSystem.update(dt, gameLoop.tripIntensity);
+      }
     },
 
     /* ------------------------------------------------------------ */
@@ -466,6 +481,16 @@ export function createHUD(): HUD {
           // Use 0,0 as fallback world position — the caller may provide
           // the actual delivery marker position in the future.
           hud.showScoreFloater(event.score, 0, 0, camera, renderer);
+          dialogueSystem.trigger('delivery');
+          break;
+        case 'wipeout':
+          dialogueSystem.trigger('wipeout');
+          break;
+        case 'shroom':
+          dialogueSystem.trigger('shroom');
+          break;
+        case 'nearDelivery':
+          dialogueSystem.trigger('nearDelivery');
           break;
         case 'runEnd':
           // The score screen values will be set via update() state
@@ -480,6 +505,7 @@ export function createHUD(): HUD {
     /* ------------------------------------------------------------ */
 
     dispose(): void {
+      dialogueSystem.dispose();
       container.remove();
       styleEl.remove();
     },
