@@ -1,66 +1,94 @@
+/* ------------------------------------------------------------------ */
+/*  DOUGHBOY — main entry point                                        */
+/* ------------------------------------------------------------------ */
+
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { CAMERA_START_Y, CAMERA_PITCH_DEG, DEBUG_KEY } from './constants';
+import { bootScene, rebuildCity } from './renderer';
+import { createScooter } from './scooter';
+import { createInputHandler } from './input';
+import { updateChaseCamera } from './camera';
 import { createDebugOverlay } from './debug';
-import { buildCity, disposeCity } from './city';
-import type { CityResult } from './city';
+import { disposeCity } from './city';
+import { gridToWorld } from './grid';
 
-/* Scene, camera, renderer, controls, lights ----------------------- */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
+/* ------------------------------------------------------------------ */
+/*  Boot                                                               */
+/* ------------------------------------------------------------------ */
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000);
-const pitchRad = (CAMERA_PITCH_DEG * Math.PI) / 180;
-camera.position.set(0, CAMERA_START_Y, CAMERA_START_Y / Math.tan(pitchRad));
-camera.lookAt(0, 0, 0);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(devicePixelRatio);
-document.body.appendChild(renderer.domElement);
-
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0, 0);
-controls.update();
-
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-sun.position.set(50, 100, 50);
-scene.add(sun);
-
-/* City generation ------------------------------------------------- */
-const seedEl = document.getElementById('seed-display')!;
 let seed = Math.floor(Math.random() * 100000);
-let city: CityResult;
-let debugOverlay: THREE.Group;
+const boot = bootScene(seed);
+const { scene, camera, renderer, uniforms } = boot;
 
-function rebuild(): void {
-  // Tear down previous city + debug
-  if (city) { disposeCity(city.group); }
-  if (debugOverlay) { disposeCity(debugOverlay as unknown as THREE.Group); debugOverlay.removeFromParent(); }
+/* ------------------------------------------------------------------ */
+/*  Scooter — spawns at grid cell (0,0), a perimeter road cell         */
+/* ------------------------------------------------------------------ */
 
-  city = buildCity(seed);
-  scene.add(city.group);
+const spawnWorld = gridToWorld(boot.city.grid, 0, 0);
+const scooterResult = createScooter(spawnWorld.wx, spawnWorld.wz, boot.city.grid);
+scene.add(scooterResult.mesh);
 
-  debugOverlay = createDebugOverlay(city.grid, city.blocks, city.lots);
-  debugOverlay.visible = false;
-  scene.add(debugOverlay);
+/* ------------------------------------------------------------------ */
+/*  Input                                                              */
+/* ------------------------------------------------------------------ */
 
-  seedEl.textContent = `Seed: ${seed} | \`=debug | G=rebuild`;
-}
+const { state: input } = createInputHandler();
 
-rebuild();
+/* ------------------------------------------------------------------ */
+/*  Debug overlay                                                      */
+/* ------------------------------------------------------------------ */
 
-/* Input ----------------------------------------------------------- */
+let debugOverlay = createDebugOverlay(boot.city.grid, boot.city.blocks, boot.city.lots);
+debugOverlay.visible = false;
+scene.add(debugOverlay);
+
+/* ------------------------------------------------------------------ */
+/*  HUD (seed display — UI agent will replace)                         */
+/* ------------------------------------------------------------------ */
+
+const seedEl = document.getElementById('seed-display')!;
+seedEl.textContent = `Seed: ${seed}`;
+
+/* ------------------------------------------------------------------ */
+/*  Keybinds                                                           */
+/* ------------------------------------------------------------------ */
+
 window.addEventListener('keydown', (e) => {
-  if (e.code === DEBUG_KEY) {
+  // Toggle debug overlay
+  if (e.code === 'Backquote') {
     debugOverlay.visible = !debugOverlay.visible;
   }
+
+  // Regenerate city with new seed
   if (e.code === 'KeyG') {
     seed = Math.floor(Math.random() * 100000);
-    rebuild();
+
+    // Remove scooter and debug overlay from scene
+    scooterResult.mesh.removeFromParent();
+    disposeCity(debugOverlay as unknown as THREE.Group);
+    debugOverlay.removeFromParent();
+
+    // Rebuild city
+    rebuildCity(boot, seed);
+
+    // Reset scooter to new grid origin
+    const newSpawn = gridToWorld(boot.city.grid, 0, 0);
+    scooterResult.state.position.set(newSpawn.wx, 0, newSpawn.wz);
+    scooterResult.state.speed = 0;
+    scooterResult.state.heading = 0;
+    scene.add(scooterResult.mesh);
+
+    // Rebuild debug overlay
+    debugOverlay = createDebugOverlay(boot.city.grid, boot.city.blocks, boot.city.lots);
+    debugOverlay.visible = false;
+    scene.add(debugOverlay);
+
+    seedEl.textContent = `Seed: ${seed}`;
   }
 });
+
+/* ------------------------------------------------------------------ */
+/*  Resize                                                             */
+/* ------------------------------------------------------------------ */
 
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -68,9 +96,22 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-/* Render loop ----------------------------------------------------- */
+/* ------------------------------------------------------------------ */
+/*  Game loop                                                          */
+/* ------------------------------------------------------------------ */
+
+let lastTime = performance.now();
+
 (function animate() {
   requestAnimationFrame(animate);
-  controls.update();
+
+  const now = performance.now();
+  const dt = Math.min((now - lastTime) / 1000, 0.05); // cap at 50ms
+  lastTime = now;
+
+  scooterResult.update(dt, input, boot.city.lots);
+  updateChaseCamera(camera, scooterResult.state, dt);
+  uniforms.uTime.value = now / 1000;
+
   renderer.render(scene, camera);
 })();
