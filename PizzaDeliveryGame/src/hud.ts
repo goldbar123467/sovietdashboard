@@ -352,8 +352,47 @@ export function createHUD(): HUD {
       // HUD text (only matters when visible, but cheap to set always)
       counterEl.textContent =
         gameLoop.deliveryCount + '/' + gameLoop.totalDeliveries;
-      timerEl.textContent = formatTimer(gameLoop.deliveryTimer);
       scoreEl.textContent = 'Score: ' + gameLoop.currentScore;
+
+      // Timer text — with optional digit glitch at high trip
+      let timerText = formatTimer(gameLoop.deliveryTimer);
+      if (gameLoop.tripIntensity > 0.7 && Math.random() < 0.05) {
+        // Swap two random adjacent characters for a visual glitch
+        const idx = Math.floor(Math.random() * (timerText.length - 1));
+        const chars = timerText.split('');
+        const tmp = chars[idx];
+        chars[idx] = chars[idx + 1];
+        chars[idx + 1] = tmp;
+        timerText = chars.join('');
+      }
+      timerEl.textContent = timerText;
+
+      // --- Trip-reactive visual effects ---
+      const trip = gameLoop.tripIntensity;
+
+      // 1) Text color shift: white -> magenta when tripIntensity > 0.5
+      let textColor = '#ffffff';
+      if (trip > 0.5) {
+        const factor = (trip - 0.5) * 2; // 0 at 0.5, 1 at 1.0
+        const r = 255;
+        const g = Math.round(255 - (255 - 102) * factor); // 255 -> 102
+        const b = Math.round(255 - (255 - 204) * factor); // 255 -> 204
+        textColor = `rgb(${r},${g},${b})`;
+      }
+
+      // 2) Text glow: readability shadow + colored glow that scales with trip
+      const baseShadow = '0 0 4px rgba(0,0,0,0.8)';
+      const glowShadow =
+        trip > 0
+          ? `, 0 0 ${10 * trip}px rgba(255,100,255,${trip * 0.8})`
+          : '';
+      const textShadow = baseShadow + glowShadow;
+
+      // Apply to all in-game HUD elements
+      for (const el of hudElements) {
+        el.style.color = textColor;
+        el.style.textShadow = textShadow;
+      }
     },
 
     /* ------------------------------------------------------------ */
