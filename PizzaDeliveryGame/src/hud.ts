@@ -60,11 +60,24 @@ const HUD_CSS = `
   right: 16px;
   font-size: 28px;
   text-shadow: 0 0 4px rgba(0,0,0,0.8);
+  transition: transform 0.3s ease;
+}
+.hud-counter.hud-counter--near {
+  transform: scale(1.2);
+}
+
+.hud-separator {
+  position: absolute;
+  top: 48px;
+  right: 16px;
+  width: 80px;
+  height: 1px;
+  background: rgba(255,255,255,0.2);
 }
 
 .hud-timer {
   position: absolute;
-  top: 52px;
+  top: 56px;
   right: 16px;
   font-size: 18px;
   text-shadow: 0 0 4px rgba(0,0,0,0.8);
@@ -130,11 +143,23 @@ const HUD_CSS = `
   color: white;
   letter-spacing: 8px;
 }
+.hud-title-subtitle {
+  font: 16px monospace;
+  color: #888;
+  margin-top: 8px;
+  letter-spacing: 4px;
+}
 .hud-title-hint {
   font: 18px monospace;
   color: #aaa;
   margin-top: 24px;
   animation: hud-pulse 1.5s ease-in-out infinite;
+}
+.hud-title-credit {
+  position: absolute;
+  bottom: 32px;
+  font: 12px monospace;
+  color: #555;
 }
 
 @keyframes hud-pulse {
@@ -155,10 +180,15 @@ const HUD_CSS = `
   color: #ffdd00;
   margin-top: 16px;
 }
-.hud-score-info {
+.hud-score-stat {
   font: 20px monospace;
   color: #ccc;
-  margin-top: 12px;
+  margin-top: 8px;
+}
+.hud-score-rating {
+  font: bold 28px monospace;
+  margin-top: 20px;
+  letter-spacing: 2px;
 }
 .hud-score-hint {
   font: 18px monospace;
@@ -223,6 +253,10 @@ export function createHUD(): HUD {
   counterEl.textContent = '0/7';
   container.appendChild(counterEl);
 
+  const separatorEl = document.createElement('div');
+  separatorEl.className = 'hud-separator';
+  container.appendChild(separatorEl);
+
   const timerEl = document.createElement('div');
   timerEl.className = 'hud-timer';
   timerEl.textContent = '00:00';
@@ -233,7 +267,7 @@ export function createHUD(): HUD {
   scoreEl.textContent = 'Score: 0';
   container.appendChild(scoreEl);
 
-  const hudElements = [counterEl, timerEl, scoreEl];
+  const hudElements = [counterEl, separatorEl, timerEl, scoreEl];
 
   /* ---- Pause overlay ---- */
   const pauseOverlay = document.createElement('div');
@@ -262,10 +296,20 @@ export function createHUD(): HUD {
   titleName.textContent = 'DOUGHBOY';
   titleOverlay.appendChild(titleName);
 
+  const titleSubtitle = document.createElement('div');
+  titleSubtitle.className = 'hud-title-subtitle';
+  titleSubtitle.textContent = 'PIZZA DELIVERY AFTER DARK';
+  titleOverlay.appendChild(titleSubtitle);
+
   const titleHint = document.createElement('div');
   titleHint.className = 'hud-title-hint';
   titleHint.textContent = 'Press any key to start';
   titleOverlay.appendChild(titleHint);
+
+  const titleCredit = document.createElement('div');
+  titleCredit.className = 'hud-title-credit';
+  titleCredit.textContent = 'A jam game';
+  titleOverlay.appendChild(titleCredit);
 
   container.appendChild(titleOverlay);
 
@@ -279,15 +323,25 @@ export function createHUD(): HUD {
   scoreHeader.textContent = 'RUN COMPLETE';
   scoreOverlay.appendChild(scoreHeader);
 
+  const scoreDeliveryStat = document.createElement('div');
+  scoreDeliveryStat.className = 'hud-score-stat';
+  scoreDeliveryStat.textContent = 'DELIVERIES: 0/7';
+  scoreOverlay.appendChild(scoreDeliveryStat);
+
+  const scoreWipeoutStat = document.createElement('div');
+  scoreWipeoutStat.className = 'hud-score-stat';
+  scoreWipeoutStat.textContent = 'WIPEOUTS: 0';
+  scoreOverlay.appendChild(scoreWipeoutStat);
+
   const scoreTotal = document.createElement('div');
   scoreTotal.className = 'hud-score-total';
-  scoreTotal.textContent = '0';
+  scoreTotal.textContent = 'TOTAL SCORE: 0';
   scoreOverlay.appendChild(scoreTotal);
 
-  const scoreInfo = document.createElement('div');
-  scoreInfo.className = 'hud-score-info';
-  scoreInfo.textContent = 'Deliveries: 0 | Wipeouts: 0';
-  scoreOverlay.appendChild(scoreInfo);
+  const scoreRating = document.createElement('div');
+  scoreRating.className = 'hud-score-rating';
+  scoreRating.textContent = '';
+  scoreOverlay.appendChild(scoreRating);
 
   const scoreHint = document.createElement('div');
   scoreHint.className = 'hud-score-hint';
@@ -453,9 +507,32 @@ export function createHUD(): HUD {
       deliveryCount: number,
       wipeoutCount: number,
     ): void {
-      scoreTotal.textContent = String(totalScore);
-      scoreInfo.textContent =
-        'Deliveries: ' + deliveryCount + ' | Wipeouts: ' + wipeoutCount;
+      scoreDeliveryStat.textContent = 'DELIVERIES: ' + deliveryCount + '/7';
+      scoreWipeoutStat.textContent = 'WIPEOUTS: ' + wipeoutCount;
+      scoreTotal.textContent = 'TOTAL SCORE: ' + totalScore;
+
+      // Rating based on score
+      let ratingText: string;
+      let ratingColor: string;
+      if (totalScore >= 2000) {
+        ratingText = 'S RANK \u2014 LEGENDARY';
+        ratingColor = '#ffd700';
+      } else if (totalScore >= 1500) {
+        ratingText = 'A RANK \u2014 EXCELLENT';
+        ratingColor = '#00ff88';
+      } else if (totalScore >= 1000) {
+        ratingText = 'B RANK \u2014 SOLID';
+        ratingColor = '#00ccff';
+      } else if (totalScore >= 500) {
+        ratingText = 'C RANK \u2014 OKAY';
+        ratingColor = '#ffffff';
+      } else {
+        ratingText = 'D RANK \u2014 COLD PIZZA';
+        ratingColor = '#888888';
+      }
+      scoreRating.textContent = ratingText;
+      scoreRating.style.color = ratingColor;
+
       scoreOverlay.style.display = 'flex';
     },
 
@@ -482,6 +559,8 @@ export function createHUD(): HUD {
           // the actual delivery marker position in the future.
           hud.showScoreFloater(event.score, 0, 0, camera, renderer);
           dialogueSystem.trigger('delivery');
+          // Delivery done — remove near-delivery scale
+          counterEl.classList.remove('hud-counter--near');
           break;
         case 'wipeout':
           dialogueSystem.trigger('wipeout');
@@ -491,6 +570,8 @@ export function createHUD(): HUD {
           break;
         case 'nearDelivery':
           dialogueSystem.trigger('nearDelivery');
+          // Player is within 20m — scale up the counter
+          counterEl.classList.add('hud-counter--near');
           break;
         case 'runEnd':
           // The score screen values will be set via update() state
