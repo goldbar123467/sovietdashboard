@@ -1,21 +1,23 @@
 /* ------------------------------------------------------------------ */
-/*  DOUGHBOY — main entry point                                        */
+/*  DOUGHBOY — main entry point (Phase 1 integration)                  */
 /* ------------------------------------------------------------------ */
 
 import * as THREE from 'three';
-import { bootScene, rebuildCity } from './renderer';
+import { bootScene } from './renderer';
 import { createScooter } from './scooter';
 import { createInputHandler } from './input';
 import { updateChaseCamera } from './camera';
 import { createDebugOverlay } from './debug';
-import { disposeCity } from './city';
 import { gridToWorld } from './grid';
+import { createGameLoop } from './gameLoop';
+import { createHUD } from './hud';
+import { createAudioManager } from './audio';
 
 /* ------------------------------------------------------------------ */
 /*  Boot                                                               */
 /* ------------------------------------------------------------------ */
 
-let seed = Math.floor(Math.random() * 100000);
+const seed = Math.floor(Math.random() * 100000);
 const boot = bootScene(seed);
 const { scene, camera, renderer, uniforms } = boot;
 
@@ -34,6 +36,31 @@ scene.add(scooterResult.mesh);
 const { state: input } = createInputHandler();
 
 /* ------------------------------------------------------------------ */
+/*  Audio                                                              */
+/* ------------------------------------------------------------------ */
+
+const audioManager = createAudioManager();
+
+/* ------------------------------------------------------------------ */
+/*  Game loop                                                          */
+/* ------------------------------------------------------------------ */
+
+const gameLoop = createGameLoop();
+gameLoop.init(boot, scooterResult.state, scooterResult.mesh, scooterResult.events, audioManager);
+
+/* ------------------------------------------------------------------ */
+/*  HUD                                                                */
+/* ------------------------------------------------------------------ */
+
+const hud = createHUD();
+hud.showTitleScreen(true);
+
+// Wire game events to HUD
+gameLoop.onEvent = (event) => {
+  hud.onEvent(event, camera, renderer);
+};
+
+/* ------------------------------------------------------------------ */
 /*  Debug overlay                                                      */
 /* ------------------------------------------------------------------ */
 
@@ -42,47 +69,12 @@ debugOverlay.visible = false;
 scene.add(debugOverlay);
 
 /* ------------------------------------------------------------------ */
-/*  HUD (seed display — UI agent will replace)                         */
-/* ------------------------------------------------------------------ */
-
-const seedEl = document.getElementById('seed-display')!;
-seedEl.textContent = `Seed: ${seed}`;
-
-/* ------------------------------------------------------------------ */
-/*  Keybinds                                                           */
+/*  Keybinds (debug only — gameplay keys handled by input system)      */
 /* ------------------------------------------------------------------ */
 
 window.addEventListener('keydown', (e) => {
-  // Toggle debug overlay
   if (e.code === 'Backquote') {
     debugOverlay.visible = !debugOverlay.visible;
-  }
-
-  // Regenerate city with new seed
-  if (e.code === 'KeyG') {
-    seed = Math.floor(Math.random() * 100000);
-
-    // Remove scooter and debug overlay from scene
-    scooterResult.mesh.removeFromParent();
-    disposeCity(debugOverlay as unknown as THREE.Group);
-    debugOverlay.removeFromParent();
-
-    // Rebuild city
-    rebuildCity(boot, seed);
-
-    // Reset scooter to new grid origin
-    const newSpawn = gridToWorld(boot.city.grid, 0, 0);
-    scooterResult.state.position.set(newSpawn.wx, 0, newSpawn.wz);
-    scooterResult.state.speed = 0;
-    scooterResult.state.heading = 0;
-    scene.add(scooterResult.mesh);
-
-    // Rebuild debug overlay
-    debugOverlay = createDebugOverlay(boot.city.grid, boot.city.blocks, boot.city.lots);
-    debugOverlay.visible = false;
-    scene.add(debugOverlay);
-
-    seedEl.textContent = `Seed: ${seed}`;
   }
 });
 
@@ -97,7 +89,14 @@ window.addEventListener('resize', () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  Game loop                                                          */
+/*  Hide old seed display (HUD replaces it)                            */
+/* ------------------------------------------------------------------ */
+
+const seedEl = document.getElementById('seed-display');
+if (seedEl) seedEl.style.display = 'none';
+
+/* ------------------------------------------------------------------ */
+/*  Animation loop                                                     */
 /* ------------------------------------------------------------------ */
 
 let lastTime = performance.now();
@@ -109,8 +108,21 @@ let lastTime = performance.now();
   const dt = Math.min((now - lastTime) / 1000, 0.05); // cap at 50ms
   lastTime = now;
 
-  scooterResult.update(dt, input, boot.city.lots);
+  // Update game state machine (deliveries, shrooms, scoring, state transitions)
+  gameLoop.update(dt, input);
+
+  // Only advance scooter physics while actively playing
+  if (gameLoop.state === 'playing') {
+    scooterResult.update(dt, input, boot.city.lots);
+  }
+
+  // Camera follows scooter regardless of state
   updateChaseCamera(camera, scooterResult.state, dt);
+
+  // Update HUD every frame (handles visibility per game state)
+  hud.update(gameLoop);
+
+  // Shader time uniform
   uniforms.uTime.value = now / 1000;
 
   renderer.render(scene, camera);
