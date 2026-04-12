@@ -107,7 +107,7 @@ function buildFence(
       segGeo.translate(0, segmentHeight / 2, 0);
       paintAllUVs(segGeo, fenceUV);
 
-      const segMesh = new THREE.Mesh(segGeo, palette.mainMaterial);
+      const segMesh = new THREE.Mesh(segGeo, palette.standardMaterial);
       segMesh.position.set(cx, 0, cz);
       meshes.push(segMesh);
 
@@ -118,7 +118,7 @@ function buildFence(
       postGeo.translate(0, postHeight / 2, 0);
       paintAllUVs(postGeo, fenceUV);
 
-      const postMesh = new THREE.Mesh(postGeo, palette.mainMaterial);
+      const postMesh = new THREE.Mesh(postGeo, palette.standardMaterial);
       postMesh.position.set(postX, 0, postZ);
       meshes.push(postMesh);
     }
@@ -130,7 +130,7 @@ function buildFence(
     lastPostGeo.translate(0, postHeight / 2, 0);
     paintAllUVs(lastPostGeo, fenceUV);
 
-    const lastPostMesh = new THREE.Mesh(lastPostGeo, palette.mainMaterial);
+    const lastPostMesh = new THREE.Mesh(lastPostGeo, palette.standardMaterial);
     lastPostMesh.position.set(lastPostX, 0, lastPostZ);
     meshes.push(lastPostMesh);
   }
@@ -156,7 +156,7 @@ function buildDriveway(
   const geo = new THREE.PlaneGeometry(2, 3);
   paintAllUVs(geo, drivewayUV);
 
-  const mesh = new THREE.Mesh(geo, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geo, palette.standardMaterial);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = 0.02;
 

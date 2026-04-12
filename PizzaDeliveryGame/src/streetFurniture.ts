@@ -112,7 +112,7 @@ function createStreetLight(
   lamp.dispose();
 
   // Create a group-like merged mesh for the pole
-  const poleMesh = new THREE.Mesh(poleGeo, palette.mainMaterial);
+  const poleMesh = new THREE.Mesh(poleGeo, palette.standardMaterial);
   poleMesh.position.set(x, 0, z);
 
   // We need to return a single mesh, so we'll use a Group internally
@@ -170,7 +170,7 @@ function createTrafficSign(
   pole.dispose();
   face.dispose();
 
-  const mesh = new THREE.Mesh(geo, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geo, palette.standardMaterial);
   mesh.position.set(x, 0, z);
   return mesh;
 }
@@ -201,7 +201,7 @@ function createBench(
   seat.dispose();
   back.dispose();
 
-  const mesh = new THREE.Mesh(geo, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geo, palette.standardMaterial);
   mesh.position.set(x, 0, z);
   if (rotateForNS) {
     mesh.rotation.y = Math.PI / 2;

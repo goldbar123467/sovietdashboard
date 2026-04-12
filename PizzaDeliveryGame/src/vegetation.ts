@@ -164,7 +164,7 @@ function placeTree(
   const type = forceType ?? rng.pick(TREE_TYPES);
   const canopyIndex = rng.pick(CANOPY_COLORS);
   const geo = createTreeGeometry(type, palette, canopyIndex);
-  const mesh = new THREE.Mesh(geo, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geo, palette.standardMaterial);
   mesh.position.set(x, 0, z);
   return mesh;
 }
@@ -176,7 +176,7 @@ function placeGrassTuft(
   palette: PaletteAtlas,
 ): THREE.Mesh {
   const geo = createGrassTuft(palette);
-  const mesh = new THREE.Mesh(geo, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geo, palette.standardMaterial);
   const yRot = rng.nextFloat(0, Math.PI * 2);
   mesh.rotation.y = yRot;
   mesh.position.set(x, 0, z);

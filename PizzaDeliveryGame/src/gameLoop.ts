@@ -212,8 +212,8 @@ export function createGameLoop(): GameLoop {
       previousGridZ = 0;
       placeDelivery(FIRST_MIN_DIST, FIRST_MAX_DIST);
 
-      // Spawn shrooms
-      respawnShrooms();
+      // Shrooms disabled for visual stability
+      // respawnShrooms();
 
       // Wire scooter events
       scooterEventsRef.onWipeout = () => {
@@ -275,21 +275,9 @@ export function createGameLoop(): GameLoop {
         currentMarker.mesh.rotation.y += dt * MARKER_SPIN_SPEED;
       }
 
-      // 3. Animate shrooms
-      updateShrooms(shrooms, elapsedTime);
-
-      // 4. Check shroom pickup
-      const pickedShroom = checkShroomPickup(
-        shrooms,
-        scooter.position.x,
-        scooter.position.z,
-      );
-      if (pickedShroom) {
-        loop.tripIntensity = Math.min(1.0, loop.tripIntensity + TRIP_PER_SHROOM);
-        loop.shroomsThisDelivery++;
-        emit({ type: 'shroom', tripIntensity: loop.tripIntensity });
-        audio.play('shroom');
-      }
+      // 3-4. Shrooms disabled for visual stability
+      // updateShrooms(shrooms, elapsedTime);
+      // checkShroomPickup disabled
 
       // 5. Check delivery completion
       if (currentMarker) {
@@ -344,7 +332,7 @@ export function createGameLoop(): GameLoop {
               currentSeed = Math.floor(Math.random() * 100000);
               rebuildCity(bootRef, currentSeed);
               rng = createPRNG(currentSeed);
-              respawnShrooms();
+              // respawnShrooms(); // disabled
             });
           }
 
@@ -498,8 +486,8 @@ export function createGameLoop(): GameLoop {
       previousGridZ = 0;
       placeDelivery(FIRST_MIN_DIST, FIRST_MAX_DIST);
 
-      // Respawn shrooms
-      respawnShrooms();
+      // Respawn shrooms — disabled
+      // respawnShrooms();
 
       // Reset all counters
       loop.state = 'title';

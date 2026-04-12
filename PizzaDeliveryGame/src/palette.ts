@@ -7,7 +7,8 @@ import {
 
 export interface PaletteAtlas {
   texture: THREE.DataTexture;
-  mainMaterial: THREE.ShaderMaterial;
+  mainMaterial: THREE.ShaderMaterial;      // trip shader — buildings only
+  standardMaterial: THREE.MeshLambertMaterial; // plain lit — roads, trees, ground, props
   emissiveMaterial: THREE.ShaderMaterial;
   uniforms: TripUniforms;
   uvForIndex(index: number): [number, number];
@@ -141,6 +142,7 @@ export function createPalette(): PaletteAtlas {
 
   const { material: mainMaterial, uniforms } = createTripMaterial(texture);
   const { material: emissiveMaterial } = createEmissiveTripMaterial(texture);
+  const standardMaterial = new THREE.MeshLambertMaterial({ map: texture });
 
   function uvForIndex(index: number): [number, number] {
     const col = index % SIZE;
@@ -159,5 +161,5 @@ export function createPalette(): PaletteAtlas {
     }
   }
 
-  return { texture, mainMaterial, emissiveMaterial, uniforms, uvForIndex, setFaceUV };
+  return { texture, mainMaterial, standardMaterial, emissiveMaterial, uniforms, uvForIndex, setFaceUV };
 }

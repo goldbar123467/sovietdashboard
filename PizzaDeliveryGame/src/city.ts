@@ -59,7 +59,7 @@ function createGround(palette: PaletteAtlas): THREE.Mesh {
     uvAttr.setXY(i, u, v);
   }
 
-  const mesh = new THREE.Mesh(geo, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geo, palette.standardMaterial);
   mesh.rotation.x = -Math.PI / 2;
   mesh.position.y = -0.01;
   mesh.name = 'ground';

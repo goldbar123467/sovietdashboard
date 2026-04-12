@@ -72,7 +72,7 @@ function buildRoadSurface(grid: Grid, palette: PaletteAtlas): THREE.Mesh {
   );
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
 
-  const mesh = new THREE.Mesh(geometry, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geometry, palette.standardMaterial);
   mesh.position.y = 0.05;
   mesh.name = 'road-surface';
   return mesh;
@@ -157,7 +157,7 @@ function buildLaneMarkings(grid: Grid, palette: PaletteAtlas): THREE.Mesh {
   );
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
 
-  const mesh = new THREE.Mesh(geometry, palette.mainMaterial);
+  const mesh = new THREE.Mesh(geometry, palette.standardMaterial);
   mesh.position.y = 0.06;
   mesh.name = 'lane-markings';
   return mesh;
