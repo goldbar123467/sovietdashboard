@@ -150,6 +150,8 @@ function defineBulding(lot: Lot, rng: PRNG): BuildingDef | null {
 function buildMesh(def: BuildingDef, palette: PaletteAtlas): THREE.Mesh {
   const wallUV = palette.uvForIndex(def.wallColor);
   const winUV = palette.uvForIndex(def.windowColor);
+  // Ground-floor band: 2 palette slots darker than the wall color
+  const groundFloorUV = palette.uvForIndex(def.wallColor + 2);
 
   const allPositions: number[] = [];
   const allNormals: number[] = [];
@@ -215,10 +217,10 @@ function buildMesh(def: BuildingDef, palette: PaletteAtlas): THREE.Mesh {
         allUVs[(i + v) * 2 + 1] = wallUV[1];
       }
     } else if (avgY < groundFloorThreshold) {
-      // Ground floor side faces get wall color
+      // Ground floor side faces get a darker band color
       for (let v = 0; v < 3; v++) {
-        allUVs[(i + v) * 2] = wallUV[0];
-        allUVs[(i + v) * 2 + 1] = wallUV[1];
+        allUVs[(i + v) * 2] = groundFloorUV[0];
+        allUVs[(i + v) * 2 + 1] = groundFloorUV[1];
       }
     } else {
       // Upper floor side faces: ~60% window, ~40% wall

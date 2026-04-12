@@ -8,6 +8,7 @@ import { generateRoads } from './roads';
 import { detectBlocks } from './blocks';
 import { subdivideLots } from './lots';
 import { generateBuildings } from './buildings';
+import { generateDecals } from './decals';
 import { generateVegetation } from './vegetation';
 import { generateStreetFurniture } from './streetFurniture';
 import { generateLotDetails } from './lotDetails';
@@ -84,6 +85,7 @@ export function buildCity(seed: number): CityResult {
   const { group: buildings, builtLots } = generateBuildings(lots, rng, palette);
   const ground = createGround(palette);
 
+  const decals = generateDecals(lots, rng);
   const vegetation = generateVegetation(lots, grid, rng, palette, builtLots);
   const furniture = generateStreetFurniture(grid, palette);
   const details = generateLotDetails(lots, palette);
@@ -93,6 +95,7 @@ export function buildCity(seed: number): CityResult {
   group.add(ground);
   group.add(roads);
   group.add(buildings);
+  group.add(decals);
   group.add(vegetation);
   group.add(furniture);
   group.add(details);
