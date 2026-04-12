@@ -64,7 +64,16 @@ export function createAudioManager(): AudioManager {
   let musicLfoGain: GainNode | null = null;
   let musicPlaying = false;
 
-  // Trip intensity (stored for Phase 2 use)
+  // Base frequency of the music oscillator (stored so we can pitch-shift)
+  const musicBaseFreq = 150;
+
+  // Flanger state
+  let flangerDelay: DelayNode | null = null;
+  let flangerLfo: OscillatorNode | null = null;
+  let flangerLfoGain: GainNode | null = null;
+  let flangerWetGain: GainNode | null = null;
+
+  // Trip intensity
   let _tripIntensity = 0;
 
   // Cached noise buffers (created once on init)
@@ -298,17 +307,26 @@ export function createAudioManager(): AudioManager {
   }
 
   function setTripIntensity(value: number): void {
-    // Store for Phase 2 (pitch-shift, flanger). No audible effect in Phase 1.
     _tripIntensity = clamp(value, 0, 1);
+
+    // Pitch-shift: lower music oscillator frequency by up to 10% at peak trip
+    if (musicOsc) {
+      musicOsc.frequency.value = musicBaseFreq * (1.0 - _tripIntensity * 0.1);
+    }
+
+    // Flanger wet/dry mix: 0 at sober, 0.5 at peak trip
+    if (flangerWetGain) {
+      flangerWetGain.gain.value = _tripIntensity * 0.5;
+    }
   }
 
   function startMusic(): void {
     if (!initialized || !ctx || !masterGain || musicPlaying) return;
 
-    // Sawtooth bass oscillator
+    // Sawtooth bass oscillator (apply current trip pitch-shift)
     musicOsc = ctx.createOscillator();
     musicOsc.type = 'sawtooth';
-    musicOsc.frequency.value = 150;
+    musicOsc.frequency.value = musicBaseFreq * (1.0 - _tripIntensity * 0.1);
 
     // Low-pass to soften it
     musicFilter = ctx.createBiquadFilter();
@@ -331,13 +349,42 @@ export function createAudioManager(): AudioManager {
     musicLfo.connect(musicLfoGain);
     musicLfoGain.connect(musicGain.gain);
 
-    // Signal path: osc → filter → gain → master
+    // --- Flanger effect ---
+    // Delay node with small initial delay (centre of sweep range)
+    flangerDelay = ctx.createDelay(0.02);
+    flangerDelay.delayTime.value = 0.003; // midpoint of 0.001–0.005s
+
+    // LFO modulates the delay time between 0.001s and 0.005s
+    // Centre = 0.003s, amplitude = 0.002s → sweeps 0.001–0.005
+    flangerLfo = ctx.createOscillator();
+    flangerLfo.type = 'sine';
+    flangerLfo.frequency.value = 0.3;
+
+    flangerLfoGain = ctx.createGain();
+    flangerLfoGain.gain.value = 0.002; // ±2ms around the 3ms centre
+
+    flangerLfo.connect(flangerLfoGain);
+    flangerLfoGain.connect(flangerDelay.delayTime);
+
+    // Wet gain — controlled by trip intensity (0 when sober, 0.5 at peak)
+    flangerWetGain = ctx.createGain();
+    flangerWetGain.gain.value = _tripIntensity * 0.5;
+
+    // Signal path:
+    //   osc → filter → gain (dry) → master
+    //                → flangerDelay → flangerWetGain → master
     musicOsc.connect(musicFilter);
     musicFilter.connect(musicGain);
     musicGain.connect(masterGain);
 
+    // Wet path taps after the filter (pre-gain) for cleaner flanging
+    musicFilter.connect(flangerDelay);
+    flangerDelay.connect(flangerWetGain);
+    flangerWetGain.connect(masterGain);
+
     musicOsc.start();
     musicLfo.start();
+    flangerLfo.start();
     musicPlaying = true;
   }
 
@@ -346,6 +393,7 @@ export function createAudioManager(): AudioManager {
 
     try { musicOsc?.stop(); } catch { /* already stopped */ }
     try { musicLfo?.stop(); } catch { /* already stopped */ }
+    try { flangerLfo?.stop(); } catch { /* already stopped */ }
 
     musicOsc?.disconnect();
     musicFilter?.disconnect();
@@ -353,11 +401,22 @@ export function createAudioManager(): AudioManager {
     musicLfo?.disconnect();
     musicLfoGain?.disconnect();
 
+    flangerDelay?.disconnect();
+    flangerLfo?.disconnect();
+    flangerLfoGain?.disconnect();
+    flangerWetGain?.disconnect();
+
     musicOsc = null;
     musicFilter = null;
     musicGain = null;
     musicLfo = null;
     musicLfoGain = null;
+
+    flangerDelay = null;
+    flangerLfo = null;
+    flangerLfoGain = null;
+    flangerWetGain = null;
+
     musicPlaying = false;
   }
 
