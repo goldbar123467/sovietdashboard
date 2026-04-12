@@ -14,9 +14,13 @@ const NEAR = 0.1;
 const FAR = 2000;
 const DISTANCE_BEHIND = 6;   // meters behind scooter
 const HEIGHT_ABOVE = 2.5;    // meters above ground
-const LOOK_AHEAD = 3;        // meters forward on scooter heading
+const LOOK_AHEAD_MIN = 1.0;  // meters forward at rest
+const LOOK_AHEAD_MAX = 3.0;  // meters forward at full speed
 const LOOK_HEIGHT = 0.8;     // y-level of look-at target
-const POS_DAMPING = 0.12;    // lerp factor at 60 fps
+const POS_DAMPING_SLOW = 0.12;  // lerp factor at 60 fps when slow/stopped
+const POS_DAMPING_FAST = 0.15;  // lerp factor at 60 fps when fast (>8 m/s)
+const SPEED_REF = 12;           // reference speed for interpolation
+const SNAP_THRESHOLD = 20;      // snap camera if > 20 m from ideal (respawn)
 const ROT_DAMPING = 0.15;    // lerp factor at 60 fps
 
 /* ------------------------------------------------------------------ */
@@ -95,30 +99,43 @@ export function updateChaseCamera(
     _prevFov = targetFov;
   }
 
+  // Speed-scaled look-ahead: 1 m at rest, 3 m at full speed
+  const speedFactor = Math.min(scooter.speed / SPEED_REF, 1);
+  const lookAhead = LOOK_AHEAD_MIN + speedFactor * (LOOK_AHEAD_MAX - LOOK_AHEAD_MIN);
+
   // Ideal camera position: behind and above the scooter
   const idealX = scooter.position.x - Math.sin(scooter.heading) * DISTANCE_BEHIND;
   const idealZ = scooter.position.z - Math.cos(scooter.heading) * DISTANCE_BEHIND;
   const idealY = HEIGHT_ABOVE;
 
-  // Ideal look-at target: ahead of the scooter
-  const lookX = scooter.position.x + Math.sin(scooter.heading) * LOOK_AHEAD;
-  const lookZ = scooter.position.z + Math.cos(scooter.heading) * LOOK_AHEAD;
+  // Ideal look-at target: ahead of the scooter (scaled by speed)
+  const lookX = scooter.position.x + Math.sin(scooter.heading) * lookAhead;
+  const lookZ = scooter.position.z + Math.cos(scooter.heading) * lookAhead;
   const lookY = LOOK_HEIGHT;
 
+  // Speed-dependent position damping: tighter at high speed, smoother when slow
+  const posDampingBase = POS_DAMPING_SLOW + speedFactor * (POS_DAMPING_FAST - POS_DAMPING_SLOW);
+
   // Frame-independent damping factors
-  const posDamping = 1 - Math.pow(1 - POS_DAMPING, dt * 60);
+  const posDamping = 1 - Math.pow(1 - posDampingBase, dt * 60);
   const rotDamping = 1 - Math.pow(1 - ROT_DAMPING, dt * 60);
 
-  if (!_initialized) {
-    // Snap on first frame — no easing
+  // Distance from camera to ideal position
+  const dx = idealX - camera.position.x;
+  const dy = idealY - camera.position.y;
+  const dz = idealZ - camera.position.z;
+  const distSq = dx * dx + dy * dy + dz * dz;
+
+  if (!_initialized || distSq > SNAP_THRESHOLD * SNAP_THRESHOLD) {
+    // Snap on first frame or after respawn / large teleport
     camera.position.set(idealX, idealY, idealZ);
     _smoothedTarget.set(lookX, lookY, lookZ);
     _initialized = true;
   } else {
     // Lerp camera position toward ideal
-    camera.position.x += (idealX - camera.position.x) * posDamping;
-    camera.position.y += (idealY - camera.position.y) * posDamping;
-    camera.position.z += (idealZ - camera.position.z) * posDamping;
+    camera.position.x += dx * posDamping;
+    camera.position.y += dy * posDamping;
+    camera.position.z += dz * posDamping;
 
     // Lerp smoothed look-at target
     _smoothedTarget.x += (lookX - _smoothedTarget.x) * rotDamping;
