@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CityGame</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #1a1a2e; }
+    canvas { display: block; }
+    #seed-display {
+      position: fixed; top: 10px; left: 10px;
+      color: #fff; font: 14px monospace;
+      background: rgba(0,0,0,0.5); padding: 4px 8px;
+      border-radius: 4px; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="seed-display"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

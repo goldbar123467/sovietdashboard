@@ -27,5 +27,6 @@ state.json
 # Everything else in home dir
 /*
 !/Medieval26/
+!/PizzaDeliveryGame/
 !/.gitignore
 !/README.md

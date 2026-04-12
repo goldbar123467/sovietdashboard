@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+# Reference GLB is too large for git (60MB)
+docs/reference/source/
+docs/reference/analysis.json
