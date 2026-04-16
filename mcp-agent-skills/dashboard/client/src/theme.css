@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  --color-soviet-red: #c41e1e;
+  --color-soviet-red-bright: #e52222;
+  --color-soviet-bg: #08080a;
+  --color-soviet-panel: #0c0608;
+  --color-soviet-gold: #D4A843;
+  --color-soviet-cream: #F5ECD0;
+  --color-soviet-sky: #7BAFD4;
+  --color-soviet-teal: #3A9B9B;
+  --color-soviet-green: #7B9E6B;
+  --color-soviet-violet: #7B5EA7;
+}
+
+/* Constructivist diagonal stripes */
+.stripe-bg {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 20px,
+    rgba(0, 0, 0, 0.08) 20px,
+    rgba(0, 0, 0, 0.08) 22px
+  );
+}
+
+.glow-red {
+  text-shadow: 0 0 10px rgba(229, 34, 34, 0.5);
+}
+
+.panel-strip::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #c41e1e, #e52222, #c41e1e);
+}
+
+.dot-active { background: #7B9E6B; box-shadow: 0 0 8px #7B9E6B; }
+.dot-waiting { background: #D4A843; box-shadow: 0 0 8px #D4A843; }
+.dot-idle { background: #7BAFD4; box-shadow: 0 0 6px #7BAFD4; }
+
+@keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.cursor-blink { animation: blink 1s infinite; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+.dot-pulse { animation: pulse 2s infinite; }
