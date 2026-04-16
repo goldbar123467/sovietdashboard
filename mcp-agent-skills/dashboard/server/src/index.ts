@@ -1,6 +1,7 @@
 import type { ServerWebSocket } from "bun";
 import { addEvent, recentEvents } from "./db";
 import type { HookEvent, ChatMessage, WsMessage } from "./types";
+import { startNarrator, setUpdateCallback, getNarration } from "./narrator";
 
 const PORT = Number(process.env.PORT) || 4981;
 
@@ -90,6 +91,11 @@ Bun.serve({
       return json({ status: "ok", clients: clients.size });
     }
 
+    // --- GET /api/narrator ---
+    if (req.method === "GET" && url.pathname === "/api/narrator") {
+      return json({ summary: getNarration() });
+    }
+
     return new Response("Not found", { status: 404, headers: CORS_HEADERS });
   },
 
@@ -107,3 +113,9 @@ Bun.serve({
 });
 
 console.log(`[\u0422\u041E\u0412\u0410\u0420\u0418\u0429 \u0426\u0415\u041D\u0422\u0420] Server running on http://localhost:${PORT}`);
+
+setUpdateCallback((summary) => {
+  broadcast({ type: "narrator", data: summary });
+});
+
+startNarrator();
