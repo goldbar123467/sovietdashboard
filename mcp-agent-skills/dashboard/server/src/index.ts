@@ -57,12 +57,27 @@ Bun.serve({
     // --- POST /api/events ---
     if (req.method === "POST" && url.pathname === "/api/events") {
       return (async () => {
-        const body = (await req.json()) as HookEvent;
-        if (!body.session_id || !body.hook_event || !body.timestamp) {
-          return json({ error: "Missing required fields: session_id, hook_event, timestamp" }, 400);
-        }
-        addEvent(body);
-        broadcast({ type: "event", data: body });
+        const body = (await req.json()) as any;
+
+        // Normalize: Claude Code hook stdin uses tool_name/tool_input/tool_response
+        // but dashboard expects hook_event/tool_output. Fill defaults.
+        const event: HookEvent = {
+          session_id: body.session_id || "unknown",
+          agent_id: body.agent_id,
+          hook_event: body.hook_event || (body.tool_name ? "PostToolUse" : "Unknown"),
+          tool_name: body.tool_name,
+          tool_input: typeof body.tool_input === "string"
+            ? body.tool_input
+            : body.tool_input ? JSON.stringify(body.tool_input).slice(0, 500) : undefined,
+          tool_output: body.tool_output
+            ?? (body.tool_response ? JSON.stringify(body.tool_response).slice(0, 500) : undefined),
+          timestamp: body.timestamp || new Date().toISOString(),
+          duration_ms: body.duration_ms,
+          error: body.error,
+        };
+
+        addEvent(event);
+        broadcast({ type: "event", data: event });
         return json({ ok: true });
       })();
     }
