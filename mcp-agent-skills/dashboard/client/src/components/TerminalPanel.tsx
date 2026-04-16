@@ -148,13 +148,13 @@ export function TerminalPanel() {
 
       {/* Terminal body */}
       <div className="relative flex-1 min-h-0">
-        {/* Background watermark */}
+        <div ref={containerRef} className="absolute inset-0 p-1" />
+        {/* Red Son watermark — layered ABOVE the xterm canvas */}
         <img
           src={redSonLogo}
           alt=""
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 opacity-[0.04] pointer-events-none select-none"
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[45%] opacity-[0.04] pointer-events-none select-none z-10"
         />
-        <div ref={containerRef} className="absolute inset-0 p-1" />
       </div>
     </div>
   );

@@ -8,11 +8,13 @@ export function Header() {
 
       {/* Ushanka button */}
       <button
-        className="relative z-10 ml-3 w-10 h-10 rounded-full border-2 border-soviet-gold bg-soviet-panel
-                   flex items-center justify-center hover:shadow-[0_0_14px_rgba(229,34,34,0.6)] transition-shadow"
-        title="Comrade Menu"
+        className="relative z-10 ml-3 w-[46px] h-[46px] rounded-full border-2 border-white/30 bg-black/20
+                   flex items-center justify-center overflow-hidden
+                   hover:border-soviet-cream hover:shadow-[0_0_16px_rgba(245,236,208,0.3)] hover:scale-110
+                   transition-all cursor-pointer"
+        title="ТОВАРИЩ ЦЕНТР Menu"
       >
-        <img src={ushankaImg} alt="Ushanka" className="w-7 h-7 object-contain" />
+        <img src={ushankaImg} alt="Ushanka" className="w-full h-full object-cover brightness-150" />
       </button>
 
       {/* Title */}
