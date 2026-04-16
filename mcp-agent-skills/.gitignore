@@ -1,6 +1,8 @@
 node_modules/
 .env
 events.db
-.library/
+.library/**
+!.library/**/
+!.library/**/.gitkeep
 dist/
 .superpowers/
