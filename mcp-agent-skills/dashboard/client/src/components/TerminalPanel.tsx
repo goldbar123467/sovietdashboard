@@ -46,6 +46,7 @@ export function TerminalPanel() {
       fontFamily: "'Courier New', monospace",
       fontSize: 13,
       lineHeight: 1.3,
+      disableStdin: true,
     });
 
     const fit = new FitAddon();

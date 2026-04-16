@@ -42,7 +42,7 @@ export function ChatPanel() {
   }
 
   return (
-    <div className="relative flex flex-col h-[200px] border-2 border-soviet-red bg-soviet-panel panel-strip overflow-hidden">
+    <div className="relative flex flex-col flex-1 min-h-[200px] border-2 border-soviet-red bg-soviet-panel panel-strip overflow-hidden">
       <div className="px-3 pt-4 pb-1 shrink-0">
         <div className="flex items-center gap-2">
           <img src={hammerSickleImg} alt="" className="w-4 h-4 opacity-60" />
@@ -80,15 +80,17 @@ export function ChatPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Message..."
-          className="flex-1 bg-soviet-bg border border-soviet-red/40 text-soviet-cream text-[11px] px-2 py-1.5
-                     font-mono placeholder:text-soviet-cream/20
-                     focus:outline-none focus:border-soviet-red focus:shadow-[0_0_6px_rgba(229,34,34,0.3)]"
+          placeholder="Message agents..."
+          autoFocus
+          className="flex-1 bg-soviet-bg border-2 border-soviet-red/50 rounded-sm text-soviet-cream text-xs px-3 py-2
+                     font-mono placeholder:text-soviet-cream/30
+                     focus:outline-none focus:border-soviet-red focus:shadow-[0_0_10px_rgba(229,34,34,0.4)]"
         />
         <button
           onClick={send}
-          className="bg-soviet-red text-soviet-cream text-[10px] font-['Oswald'] uppercase tracking-wider
-                     px-3 py-1.5 hover:bg-soviet-red-bright transition-colors"
+          className="bg-soviet-red text-soviet-cream text-[11px] font-['Oswald'] uppercase tracking-wider rounded-sm
+                     px-4 py-2 hover:bg-soviet-red-bright transition-colors cursor-pointer
+                     shadow-[0_0_8px_rgba(196,30,30,0.3)]"
         >
           Send
         </button>
