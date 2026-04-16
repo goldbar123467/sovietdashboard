@@ -5,6 +5,7 @@ import { TerminalPanel } from "./components/TerminalPanel";
 import { MetricsPanel } from "./components/MetricsPanel";
 import { NarratorPanel } from "./components/NarratorPanel";
 import { ChatPanel } from "./components/ChatPanel";
+import { SovietBackground } from "./components/SovietBackground";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useAnthem } from "./hooks/useAnthem";
 
@@ -19,15 +20,18 @@ export function App() {
   }, [ws, playAnthem]);
 
   return (
-    <div className="h-screen grid grid-rows-[64px_1fr] grid-cols-[250px_1fr_330px] gap-1 p-1">
-      <Header />
-      <AgentColumn />
-      <TerminalPanel />
-      <div className="flex flex-col gap-1">
-        <MetricsPanel />
-        <NarratorPanel />
-        <ChatPanel />
+    <>
+      <SovietBackground />
+      <div className="relative z-10 h-screen grid grid-rows-[64px_1fr] grid-cols-[250px_1fr_330px] gap-1 p-1">
+        <Header />
+        <AgentColumn />
+        <TerminalPanel />
+        <div className="flex flex-col gap-1">
+          <MetricsPanel />
+          <NarratorPanel />
+          <ChatPanel />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
