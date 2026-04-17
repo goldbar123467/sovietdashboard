@@ -1,0 +1,12 @@
+{
+  "name": "tovarish-tsentr",
+  "private": true,
+  "workspaces": ["mcp-server", "dashboard/server", "dashboard/client"],
+  "scripts": {
+    "dev": "concurrently -n mcp,server,client -c red,blue,green \"npm run dev -w mcp-server\" \"npm run dev -w dashboard/server\" \"npm run dev -w dashboard/client\"",
+    "build": "npm run build -w dashboard/client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "tovarish-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts"
+  },
+  "dependencies": {}
+}
