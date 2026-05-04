@@ -1,12 +1,17 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { spawnSync } from "node:child_process";
 import { WebSocket, WebSocketServer } from "ws";
 import { addEvent, recentEvents } from "./db.js";
 import type { ChatMessage, HookEvent, WsMessage } from "./types.js";
 import { startNarrator, setUpdateCallback, getNarration } from "./narrator.js";
-import { listAgents, dispatch, getAgent, setAgentBroadcaster } from "./agents.js";
 import { snapshot, type MetricsWindow } from "./metrics.js";
 import { listCommandDefinitions, runRegisteredCommand } from "./commandRegistry.js";
 import { launchExternalBrowser, normalizeBrowserUrl, toEmbeddableUrl } from "./browserTools.js";
+import {
+  getCodexDashboardState,
+  setCodexSessionBroadcaster,
+  submitCodexPrompt,
+} from "./codexSession.js";
 
 const PORT = Number(process.env.PORT) || 4981;
 
@@ -67,6 +72,48 @@ function normalizeEvent(body: any): HookEvent {
   };
 }
 
+function resolveRepoRoot(): string {
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  return result.status === 0 ? result.stdout.trim() : process.cwd();
+}
+
+async function runCodexChat(body: ChatMessage) {
+  const msg: ChatMessage = {
+    from: body.from || "operator",
+    to: "codex",
+    body: body.body,
+    timestamp: body.timestamp || new Date().toISOString(),
+  };
+  broadcast({ type: "chat", data: msg });
+  const result = await submitCodexPrompt(msg.body, resolveRepoRoot());
+  addEvent({
+    session_id: result.threadId || "codex-dashboard",
+    agent_id: "codex-cli",
+    hook_event: "CodexDashboardTurn",
+    tool_name: "codex_exec",
+    timestamp: result.finishedAt,
+    duration_ms: result.durationMs,
+    error: result.ok ? undefined : result.error || "codex_failed",
+  });
+  broadcast({ type: "codex_result", data: result });
+  broadcast({
+    type: "chat",
+    data: {
+      from: "codex",
+      to: msg.from,
+      body: result.reply,
+      timestamp: result.finishedAt,
+    },
+  });
+  if (result.ok) {
+    broadcast({ type: "anthem" });
+  }
+  return result;
+}
+
 async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
   const method = req.method || "GET";
@@ -91,20 +138,29 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       sendJson(res, { error: "Missing required fields: from, body" }, 400);
       return;
     }
-    const msg: ChatMessage = {
-      from: body.from,
-      to: body.to || "queen",
-      body: body.body,
-      timestamp: body.timestamp || new Date().toISOString(),
-    };
-    broadcast({ type: "chat", data: msg });
-    if (getAgent(msg.to)) dispatch(msg.to, msg.body);
-    sendJson(res, { ok: true });
+    const result = await runCodexChat(body);
+    sendJson(res, { ok: true, result });
+    return;
+  }
+
+  if (method === "POST" && url.pathname === "/api/codex/chat") {
+    const body = await readJson<ChatMessage>(req);
+    if (!body.body) {
+      sendJson(res, { error: "Missing required field: body" }, 400);
+      return;
+    }
+    const result = await runCodexChat({ ...body, from: body.from || "operator", to: "codex" });
+    sendJson(res, { ok: true, result });
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/codex/session") {
+    sendJson(res, getCodexDashboardState());
     return;
   }
 
   if (method === "GET" && url.pathname === "/api/agents") {
-    sendJson(res, listAgents());
+    sendJson(res, []);
     return;
   }
 
@@ -116,17 +172,7 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
   }
 
   if (method === "POST" && url.pathname.startsWith("/api/agents/") && url.pathname.endsWith("/dispatch")) {
-    const id = url.pathname.split("/")[3];
-    if (!getAgent(id)) {
-      sendJson(res, { error: "unknown agent" }, 404);
-      return;
-    }
-    const body = await readJson<{ body?: string }>(req);
-    if (!body.body) {
-      sendJson(res, { error: "missing body" }, 400);
-      return;
-    }
-    sendJson(res, await dispatch(id, body.body));
+    sendJson(res, { error: "subagent dispatch removed; use /api/codex/chat" }, 410);
     return;
   }
 
@@ -263,12 +309,8 @@ setUpdateCallback((summary) => {
   broadcast({ type: "narrator", data: summary });
 });
 
-setAgentBroadcaster((type, data) => {
-  if (type === "anthem") {
-    broadcast({ type: "anthem" });
-    return;
-  }
-  broadcast({ type, data } as WsMessage);
+setCodexSessionBroadcaster((data) => {
+  broadcast({ type: "codex_state", data });
 });
 
 if (process.env.NARRATOR_DISABLED === "1") {

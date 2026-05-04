@@ -1,5 +1,5 @@
 import { eventsSince } from "./db.js";
-import { listAgents, queuedDepth } from "./agents.js";
+import { getCodexDashboardState } from "./codexSession.js";
 
 export type MetricsWindow = "5m" | "session" | "7d" | "all";
 
@@ -22,6 +22,10 @@ export interface MetricsSnapshot {
     avg_duration_ms: number;
     active_agents: number;
     queued: number;
+    turns: number;
+    cached_tokens: number;
+    reasoning_tokens: number;
+    failures: number;
   };
   series: MetricsSeriesPoint[];
 }
@@ -85,22 +89,23 @@ export function snapshot(window: MetricsWindow): MetricsSnapshot {
     }
   }
 
-  const agents = listAgents();
-  const tokens = agents.reduce((s, a) => s + (a.tokens ?? 0), 0);
-  const toolCalls = agents.reduce((s, a) => s + (a.tool_calls ?? 0), 0);
-  const activeAgents = agents.filter((a) => a.status === "active").length;
+  const codex = getCodexDashboardState();
 
   return {
     window,
     since: sinceIso,
     totals: {
-      tokens,
-      tool_calls: toolCalls,
+      tokens: codex.totals.totalTokens,
+      tool_calls: codex.totals.toolCalls,
       events: rows.length,
       errors,
       avg_duration_ms: Math.round(durationCount ? durationSum / durationCount : 0),
-      active_agents: activeAgents,
-      queued: queuedDepth(),
+      active_agents: codex.status === "running" ? 1 : 0,
+      queued: 0,
+      turns: codex.totals.turns,
+      cached_tokens: codex.totals.cachedInputTokens,
+      reasoning_tokens: codex.totals.reasoningOutputTokens,
+      failures: codex.totals.failures,
     },
     series,
   };
