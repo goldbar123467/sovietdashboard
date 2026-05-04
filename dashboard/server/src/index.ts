@@ -167,7 +167,41 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = await readJson<{ prompt?: string; url?: string }>(req);
     const result = await runRegisteredCommand(id, body);
     broadcast({ type: "command_result", data: result });
+    if (result.ok && result.anthemOnComplete) {
+      broadcast({ type: "anthem" });
+    }
     sendJson(res, result, result.ok ? 200 : 400);
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/browser/proxy") {
+    const target = normalizeBrowserUrl(url.searchParams.get("url") || "");
+    try {
+      const targetUrl = new URL(target);
+      if (!["http:", "https:"].includes(targetUrl.protocol)) {
+        sendText(res, "Unsupported browser proxy protocol", 400);
+        return;
+      }
+      const upstream = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 TovarishTsentr/1.0",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+      const contentType = upstream.headers.get("content-type") || "text/html; charset=utf-8";
+      const raw = await upstream.text();
+      const body = contentType.includes("text/html")
+        ? raw.replace(/<head([^>]*)>/i, `<head$1><base href="${targetUrl.href}">`)
+        : raw;
+      res.writeHead(upstream.status, {
+        "Content-Type": contentType,
+        "Content-Length": Buffer.byteLength(body),
+        ...CORS_HEADERS,
+      });
+      res.end(body);
+    } catch (err) {
+      sendText(res, `Browser proxy failed: ${err}`, 502);
+    }
     return;
   }
 
@@ -230,6 +264,10 @@ setUpdateCallback((summary) => {
 });
 
 setAgentBroadcaster((type, data) => {
+  if (type === "anthem") {
+    broadcast({ type: "anthem" });
+    return;
+  }
   broadcast({ type, data } as WsMessage);
 });
 

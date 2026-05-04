@@ -18,6 +18,13 @@ interface CommandResult {
   finishedAt: string;
 }
 
+interface ServerChatMessage {
+  from: string;
+  to: string;
+  body: string;
+  timestamp: string;
+}
+
 interface StatusPayload {
   commands: CommandDefinition[];
   host: {
@@ -47,8 +54,9 @@ function addUniqueResult(prev: CommandResult[], result: CommandResult): CommandR
 
 export function CommandBoard() {
   const [status, setStatus] = useState<StatusPayload | null>(null);
-  const [prompt, setPrompt] = useState("Summarize what is running on this machine in one paragraph.");
-  const [url, setUrl] = useState("https://www.youtube.com");
+  const [queenMessage, setQueenMessage] = useState("Give me the current work status.");
+  const [openClawText, setOpenClawText] = useState("Reply with OK only.");
+  const [url, setUrl] = useState("https://www.youtube.com/watch?v=jNQXAC9IVRw");
   const [running, setRunning] = useState<string | null>(null);
   const [results, setResults] = useState<CommandResult[]>([]);
   const ws = useWebSocketContext();
@@ -75,10 +83,23 @@ export function CommandBoard() {
     });
   }, [ws]);
 
+  useEffect(() => {
+    return ws.on("chat", (message: ServerChatMessage) => {
+      if (message.from === "operator") return;
+      setResults((prev) => addUniqueResult(prev, {
+        id: `chat.${message.from}`,
+        ok: true,
+        title: `${message.from} reply`,
+        output: message.body,
+        finishedAt: message.timestamp,
+      }));
+    });
+  }, [ws]);
+
   const grouped = useMemo(() => {
     const groups = new Map<CommandDefinition["group"], CommandDefinition[]>();
     for (const command of status?.commands ?? []) {
-      if (command.id === "codex.prompt") continue;
+      if (command.id === "openclaw.text") continue;
       if (!groups.has(command.group)) groups.set(command.group, []);
       groups.get(command.group)!.push(command);
     }
@@ -103,6 +124,40 @@ export function CommandBoard() {
         output: String(err),
         finishedAt: new Date().toISOString(),
       }, ...prev]);
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  async function sendQueenMessage() {
+    const body = queenMessage.trim();
+    if (!body) return;
+    setRunning("chat.queen");
+    setResults((prev) => addUniqueResult(prev, {
+      id: "chat.operator",
+      ok: true,
+      title: "Operator to queen",
+      output: body,
+      finishedAt: new Date().toISOString(),
+    }));
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: "operator", to: "queen", body }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      setQueenMessage("");
+    } catch (err) {
+      setResults((prev) => addUniqueResult(prev, {
+        id: "chat.queen",
+        ok: false,
+        title: "Queen dispatch failed",
+        output: String(err),
+        finishedAt: new Date().toISOString(),
+      }));
     } finally {
       setRunning(null);
     }
@@ -181,23 +236,49 @@ export function CommandBoard() {
             </section>
           ))}
 
-          <section className="border border-soviet-sky/40 bg-soviet-bg/45 p-2">
+          <section className="border border-soviet-gold/40 bg-soviet-bg/45 p-2">
             <h3 className="font-['Russo_One'] text-soviet-cream text-xs tracking-wider mb-2">
-              Codex One-Shot
+              Agent Comms
             </h3>
             <textarea
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
+              value={queenMessage}
+              onChange={(event) => setQueenMessage(event.target.value)}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  void sendQueenMessage();
+                }
+              }}
               className="w-full h-20 resize-none bg-soviet-panel border border-soviet-red/40 p-2 text-xs font-mono text-soviet-cream
                          focus:outline-none focus:border-soviet-red-bright"
             />
             <button
-              onClick={() => runCommand("codex.prompt", { prompt })}
-              disabled={running !== null || !prompt.trim()}
+              onClick={sendQueenMessage}
+              disabled={running !== null || !queenMessage.trim()}
+              className="mt-1 w-full bg-soviet-gold/75 text-soviet-bg text-[11px] font-['Oswald'] uppercase tracking-wider py-2
+                         hover:bg-soviet-gold transition-colors disabled:opacity-45"
+            >
+              {running === "chat.queen" ? "Queen Running..." : "Send To Queen"}
+            </button>
+          </section>
+
+          <section className="border border-soviet-red/45 bg-soviet-bg/45 p-2">
+            <h3 className="font-['Russo_One'] text-soviet-cream text-xs tracking-wider mb-2">
+              Text OpenClaw
+            </h3>
+            <textarea
+              value={openClawText}
+              onChange={(event) => setOpenClawText(event.target.value)}
+              className="w-full h-20 resize-none bg-soviet-panel border border-soviet-red/40 p-2 text-xs font-mono text-soviet-cream
+                         focus:outline-none focus:border-soviet-red-bright"
+            />
+            <button
+              onClick={() => runCommand("openclaw.text", { prompt: openClawText })}
+              disabled={running !== null || !openClawText.trim()}
               className="mt-1 w-full bg-soviet-red text-soviet-cream text-[11px] font-['Oswald'] uppercase tracking-wider py-2
                          hover:bg-soviet-red-bright transition-colors disabled:opacity-45"
             >
-              {running === "codex.prompt" ? "Codex Running..." : "Send To Codex"}
+              {running === "openclaw.text" ? "OpenClaw Running..." : "Send To OpenClaw"}
             </button>
           </section>
 

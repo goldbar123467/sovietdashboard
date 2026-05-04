@@ -29,13 +29,20 @@ function embeddableUrl(input: string): string {
   return normalized;
 }
 
+function frameUrl(input: string): string {
+  const embedded = embeddableUrl(input);
+  const normalized = normalizeUrl(input);
+  if (embedded !== normalized) return embedded;
+  return `/api/browser/proxy?url=${encodeURIComponent(normalized)}`;
+}
+
 export function WebPanel() {
   const [draftUrl, setDraftUrl] = useState(DEFAULT_WEB_URL);
   const [history, setHistory] = useState([DEFAULT_WEB_URL]);
   const [index, setIndex] = useState(0);
   const [frameKey, setFrameKey] = useState(0);
   const currentUrl = history[index] ?? DEFAULT_WEB_URL;
-  const frameUrl = useMemo(() => embeddableUrl(currentUrl), [currentUrl]);
+  const currentFrameUrl = useMemo(() => frameUrl(currentUrl), [currentUrl]);
 
   function navigate(raw: string) {
     const next = normalizeUrl(raw);
@@ -126,7 +133,7 @@ export function WebPanel() {
         <iframe
           key={frameKey}
           title="Command board web tab"
-          src={frameUrl}
+          src={currentFrameUrl}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
           sandbox="allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-presentation allow-same-origin allow-scripts"
@@ -134,7 +141,7 @@ export function WebPanel() {
         />
         <div className="absolute bottom-0 left-0 right-0 pointer-events-none bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
           <p className="text-[10px] font-mono text-soviet-cream/55 truncate">
-            {frameUrl}
+            {currentFrameUrl}
           </p>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeBrowserUrl, toEmbeddableUrl } from "./browserTools.js";
+import { normalizeBrowserUrl, proxiedBrowserUrl, toEmbeddableUrl } from "./browserTools.js";
 
 test("normalizeBrowserUrl adds https to bare domains", () => {
   assert.equal(normalizeBrowserUrl("youtube.com/watch?v=dQw4w9WgXcQ"), "https://youtube.com/watch?v=dQw4w9WgXcQ");
@@ -20,4 +20,11 @@ test("toEmbeddableUrl converts YouTube watch and short URLs", () => {
 
 test("toEmbeddableUrl leaves ordinary URLs intact", () => {
   assert.equal(toEmbeddableUrl("https://example.com/docs"), "https://example.com/docs");
+});
+
+test("proxiedBrowserUrl routes ordinary pages through the local browser proxy", () => {
+  assert.equal(
+    proxiedBrowserUrl("example.com/docs?q=1"),
+    "/api/browser/proxy?url=https%3A%2F%2Fexample.com%2Fdocs%3Fq%3D1",
+  );
 });

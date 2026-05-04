@@ -34,6 +34,7 @@ export interface CommandResultMessage {
   title: string;
   output: string;
   code?: number | null;
+  anthemOnComplete?: boolean;
   startedAt: string;
   finishedAt: string;
 }

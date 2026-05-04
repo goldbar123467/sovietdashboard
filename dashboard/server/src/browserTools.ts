@@ -44,6 +44,10 @@ export function toEmbeddableUrl(input: string): string {
   return normalized;
 }
 
+export function proxiedBrowserUrl(input: string): string {
+  return `/api/browser/proxy?url=${encodeURIComponent(normalizeBrowserUrl(input))}`;
+}
+
 function spawnDetached(command: string, args: string[]): BrowserLaunchResult {
   try {
     const child = spawn(command, args, {

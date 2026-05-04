@@ -10,3 +10,4 @@ tovarish.db-wal
 dist/
 .superpowers/
 .worktrees/
+.agent-worktrees/

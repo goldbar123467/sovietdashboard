@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
 import { Header } from "./components/Header";
-import { MetricsPanel } from "./components/MetricsPanel";
-import { NarratorPanel } from "./components/NarratorPanel";
-import { ChatPanel } from "./components/ChatPanel";
 import { CommandBoard } from "./components/CommandBoard";
 import { SovietBackground } from "./components/SovietBackground";
 import { WebPanel } from "./components/WebPanel";
@@ -24,7 +21,7 @@ export function App() {
   return (
     <WsContext.Provider value={ws}>
       <SovietBackground />
-      <div className="relative z-10 h-screen grid grid-rows-[64px_1fr] grid-cols-[minmax(0,1fr)_330px] gap-1 p-1">
+      <div className="relative z-10 h-screen grid grid-rows-[64px_1fr] gap-1 p-1">
         <Header />
         <main className="min-h-0 flex flex-col overflow-hidden">
           <div className="flex h-8 shrink-0 border-2 border-b-0 border-soviet-red bg-soviet-bg/80">
@@ -51,11 +48,6 @@ export function App() {
             {centerTab === "web" && <WebPanel />}
           </div>
         </main>
-        <div className="flex flex-col gap-1 min-h-0 overflow-hidden">
-          <MetricsPanel />
-          <NarratorPanel />
-          <ChatPanel />
-        </div>
       </div>
     </WsContext.Provider>
   );

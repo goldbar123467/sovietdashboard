@@ -1,7 +1,4 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 export interface CommandInput {
   prompt?: string;
@@ -14,6 +11,7 @@ export interface CommandResult {
   title: string;
   output: string;
   code?: number | null;
+  anthemOnComplete?: boolean;
   startedAt: string;
   finishedAt: string;
 }
@@ -29,6 +27,7 @@ export interface ProcessCommandDefinition {
   cwd?: string;
   timeoutMs?: number;
   risky: false;
+  anthemOnComplete?: boolean;
 }
 
 interface HandlerCommandDefinition {
@@ -39,12 +38,14 @@ interface HandlerCommandDefinition {
   kind: "handler";
   handler: (input: CommandInput) => Promise<Omit<CommandResult, "id" | "title" | "startedAt" | "finishedAt">>;
   risky: false;
+  anthemOnComplete?: boolean;
 }
 
 export type CommandDefinition = ProcessCommandDefinition | HandlerCommandDefinition;
 
 const OPENCLAW_CWD = process.env.OPENCLAW_REPO || "/home/clark/code/openclaw";
 const DEFAULT_TIMEOUT_MS = 45_000;
+const OPENCLAW_TEXT_TIMEOUT_SECONDS = Number(process.env.OPENCLAW_TEXT_TIMEOUT_SECONDS ?? "120");
 
 const COMMANDS: CommandDefinition[] = [
   {
@@ -96,6 +97,16 @@ const COMMANDS: CommandDefinition[] = [
     risky: false,
   },
   {
+    id: "openclaw.text",
+    title: "Text OpenClaw",
+    description: "Send a one-shot text prompt to OpenClaw through the Gateway.",
+    group: "openclaw",
+    kind: "handler",
+    handler: runOpenClawText,
+    anthemOnComplete: true,
+    risky: false,
+  },
+  {
     id: "codex.version",
     title: "Codex Version",
     description: "Show the installed Codex CLI version.",
@@ -104,15 +115,40 @@ const COMMANDS: CommandDefinition[] = [
     command: "codex",
     args: ["--version"],
     timeoutMs: 10_000,
+    anthemOnComplete: false,
     risky: false,
   },
   {
-    id: "codex.prompt",
-    title: "Codex Prompt",
-    description: "Send a one-shot prompt to Codex CLI and return its final answer.",
+    id: "codex.loginStatus",
+    title: "Login Status",
+    description: "Show Codex CLI authentication status.",
     group: "codex",
-    kind: "handler",
-    handler: runCodexPrompt,
+    kind: "process",
+    command: "codex",
+    args: ["login", "status"],
+    timeoutMs: 10_000,
+    risky: false,
+  },
+  {
+    id: "codex.mcpList",
+    title: "MCP Servers",
+    description: "List configured Codex MCP servers.",
+    group: "codex",
+    kind: "process",
+    command: "codex",
+    args: ["mcp", "list"],
+    timeoutMs: 10_000,
+    risky: false,
+  },
+  {
+    id: "codex.features",
+    title: "Feature Flags",
+    description: "List Codex feature flags and effective states.",
+    group: "codex",
+    kind: "process",
+    command: "codex",
+    args: ["features", "list"],
+    timeoutMs: 10_000,
     risky: false,
   },
 ];
@@ -156,22 +192,44 @@ export async function runRegisteredCommand(id: string, input: CommandInput = {})
     title: command.title,
     startedAt,
     finishedAt: new Date().toISOString(),
+    anthemOnComplete: command.anthemOnComplete ?? false,
     ...partial,
   };
 }
 
-async function runProcess(command: ProcessCommandDefinition): Promise<Omit<CommandResult, "id" | "title" | "startedAt" | "finishedAt">> {
+export async function runProcess(command: ProcessCommandDefinition): Promise<Omit<CommandResult, "id" | "title" | "startedAt" | "finishedAt">> {
   return new Promise((resolve) => {
     const child = spawn(command.command, command.args, {
       cwd: command.cwd,
       env: process.env,
       shell: false,
+      detached: process.platform !== "win32",
     });
 
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
+    let forceKillTimer: NodeJS.Timeout | undefined;
+    const signalChild = (signal: NodeJS.Signals) => {
+      if (!child.pid) return;
+      try {
+        if (process.platform === "win32") {
+          child.kill(signal);
+        } else {
+          process.kill(-child.pid, signal);
+        }
+      } catch {
+        try {
+          child.kill(signal);
+        } catch {
+          // Process already exited.
+        }
+      }
+    };
     const timer = setTimeout(() => {
-      child.kill("SIGTERM");
+      timedOut = true;
+      signalChild("SIGTERM");
+      forceKillTimer = setTimeout(() => signalChild("SIGKILL"), 2_000);
     }, command.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
     child.stdout.on("data", (chunk) => {
@@ -184,60 +242,123 @@ async function runProcess(command: ProcessCommandDefinition): Promise<Omit<Comma
     });
     child.on("error", (err) => {
       clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
       resolve({ ok: false, output: String(err), code: null });
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      const output = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
       resolve({
-        ok: code === 0,
-        output: [stdout.trim(), stderr.trim()].filter(Boolean).join("\n") || `(exit ${code})`,
+        ok: code === 0 && !timedOut,
+        output: timedOut
+          ? `${output ? `${output}\n` : ""}Command timed out after ${command.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms.`
+          : output || `(exit ${code})`,
         code,
       });
     });
   });
 }
 
-async function runCodexPrompt(input: CommandInput): Promise<Omit<CommandResult, "id" | "title" | "startedAt" | "finishedAt">> {
+export function extractLatestOpenClawSessionId(output: string): string | null {
+  const jsonStart = output.indexOf("{");
+  const jsonEnd = output.lastIndexOf("}");
+  if (jsonStart === -1 || jsonEnd < jsonStart) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(output.slice(jsonStart, jsonEnd + 1));
+  } catch {
+    return null;
+  }
+
+  const sessions = getSessionArray(parsed);
+  const directSessions = sessions
+    .filter((session) => session.kind === "direct" && typeof session.sessionId === "string")
+    .sort((a, b) => timestampMs(b.updatedAt) - timestampMs(a.updatedAt));
+  const fallbackSessions = sessions
+    .filter((session) => typeof session.sessionId === "string")
+    .sort((a, b) => timestampMs(b.updatedAt) - timestampMs(a.updatedAt));
+
+  return directSessions[0]?.sessionId ?? fallbackSessions[0]?.sessionId ?? null;
+}
+
+interface OpenClawSessionSummary {
+  sessionId?: string;
+  kind?: string;
+  updatedAt?: string | number;
+}
+
+function getSessionArray(value: unknown): OpenClawSessionSummary[] {
+  if (!value || typeof value !== "object") return [];
+  const sessions = (value as { sessions?: unknown }).sessions;
+  if (!Array.isArray(sessions)) return [];
+  return sessions.filter((session): session is OpenClawSessionSummary => Boolean(session) && typeof session === "object");
+}
+
+function timestampMs(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function runOpenClawText(input: CommandInput): Promise<Omit<CommandResult, "id" | "title" | "startedAt" | "finishedAt">> {
   const prompt = input.prompt?.trim();
   if (!prompt) {
-    return { ok: false, output: "Enter a prompt before running Codex.", code: null };
+    return { ok: false, output: "Enter a message before texting OpenClaw.", code: null };
   }
 
-  const workdir = mkdtempSync(join(tmpdir(), "command-board-codex-"));
-  const outFile = join(workdir, "last.txt");
-  const result = await runProcess({
-    id: "codex.prompt.internal",
-    title: "Codex Prompt",
-    description: "Internal Codex prompt runner.",
-    group: "codex",
+  const sessionsResult = await runProcess({
+    id: "openclaw.sessions.internal",
+    title: "OpenClaw Sessions",
+    description: "Internal OpenClaw session resolver.",
+    group: "openclaw",
     kind: "process",
-    command: "codex",
-    args: [
-      "exec",
-      "--ephemeral",
-      "--skip-git-repo-check",
-      "--sandbox",
-      "read-only",
-      "--cd",
-      workdir,
-      "--output-last-message",
-      outFile,
-      "--color",
-      "never",
-      prompt,
-    ],
-    timeoutMs: 180_000,
+    command: "pnpm",
+    args: ["openclaw", "sessions", "--json", "--all-agents"],
+    cwd: OPENCLAW_CWD,
+    timeoutMs: 15_000,
     risky: false,
   });
-
-  try {
-    const finalText = readFileSync(outFile, "utf8").trim();
-    if (finalText) return { ok: true, output: finalText, code: result.code };
-  } catch {
-    // Fall back to stdout/stderr below.
-  } finally {
-    try { rmSync(workdir, { recursive: true, force: true }); } catch {}
+  if (!sessionsResult.ok) {
+    return {
+      ok: false,
+      output: `Could not list OpenClaw sessions.\n${sessionsResult.output}`,
+      code: sessionsResult.code,
+    };
   }
 
-  return result;
+  const sessionId = extractLatestOpenClawSessionId(sessionsResult.output);
+  if (!sessionId) {
+    return {
+      ok: false,
+      output: "No OpenClaw session id was found. Start or resume an OpenClaw direct session first.",
+      code: null,
+    };
+  }
+
+  return runProcess({
+    id: "openclaw.text.internal",
+    title: "Text OpenClaw",
+    description: "Internal OpenClaw text runner.",
+    group: "openclaw",
+    kind: "process",
+    command: "pnpm",
+    args: [
+      "openclaw",
+      "agent",
+      "--session-id",
+      sessionId,
+      "--message",
+      prompt,
+      "--thinking",
+      "minimal",
+      "--timeout",
+      String(OPENCLAW_TEXT_TIMEOUT_SECONDS),
+    ],
+    cwd: OPENCLAW_CWD,
+    timeoutMs: (OPENCLAW_TEXT_TIMEOUT_SECONDS + 10) * 1000,
+    risky: false,
+  });
 }

@@ -1,9 +1,8 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { addEvent } from "./db.js";
 import type { AgentStatus, ChatMessage } from "./types.js";
+import { ensureAgentWorktree } from "./agentWorktrees.js";
 
 export interface AgentDef {
   id: string;
@@ -52,7 +51,7 @@ const runtimes = new Map<string, AgentRuntime>(
   AGENTS.map((a) => [a.id, { def: a, status: "idle", tokens: 0, toolCalls: 0, queue: [], running: false }]),
 );
 
-type Broadcaster = (type: "agent_status" | "chat", data: any) => void;
+type Broadcaster = (type: "agent_status" | "chat" | "anthem", data: any) => void;
 let broadcaster: Broadcaster | null = null;
 export function setAgentBroadcaster(fn: Broadcaster) {
   broadcaster = fn;
@@ -130,6 +129,7 @@ async function drive(rt: AgentRuntime) {
         body: rt.lastMessage + `\n\n[elapsed ${elapsedS}s]`,
         timestamp: new Date().toISOString(),
       });
+      broadcaster?.("anthem", undefined);
     }
   } finally {
     rt.running = false;
@@ -139,8 +139,9 @@ async function drive(rt: AgentRuntime) {
 }
 
 async function runCodex(def: AgentDef, userMessage: string): Promise<string | null> {
-  const workdir = mkdtempSync(join(tmpdir(), `agent-${def.id}-`));
-  const outFile = join(workdir, "last.txt");
+  const repoRoot = await gitRoot();
+  const workdir = ensureAgentWorktree(repoRoot, def.id);
+  const outFile = `${workdir}/.codex-last-${def.id}.txt`;
 
   const prompt = `${def.systemPrompt}\n\nOperator message:\n${userMessage}\n\nRespond now.`;
 
@@ -148,7 +149,7 @@ async function runCodex(def: AgentDef, userMessage: string): Promise<string | nu
     "exec",
     "--ephemeral",
     "--skip-git-repo-check",
-    "--sandbox", "read-only",
+    "--sandbox", "workspace-write",
     "--cd", workdir,
     "--output-last-message", outFile,
     "--color", "never",
@@ -175,8 +176,21 @@ async function runCodex(def: AgentDef, userMessage: string): Promise<string | nu
     return null;
   } finally {
     clearTimeout(timeout);
-    try { rmSync(workdir, { recursive: true, force: true }); } catch {}
   }
+}
+
+async function gitRoot(): Promise<string> {
+  const proc = spawn("git", ["rev-parse", "--show-toplevel"], {
+    cwd: process.cwd(),
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout = streamText(proc.stdout);
+  const code = await new Promise<number | null>((resolve, reject) => {
+    proc.on("error", reject);
+    proc.on("close", resolve);
+  });
+  if (code !== 0) throw new Error("Unable to resolve dashboard git root");
+  return (await stdout).trim();
 }
 
 async function streamText(stream: NodeJS.ReadableStream | null): Promise<string> {
