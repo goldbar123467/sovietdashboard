@@ -5,7 +5,7 @@
 
 ## Goal
 
-Turn Tovarish Tsentr into a locally hosted command board for this computer: monitor/control OpenClaw, send Codex CLI prompts, control local media playback where supported, and browse/play YouTube from a built-in web tab.
+Turn Tovarish Tsentr into a locally hosted command board for this computer: monitor/control OpenClaw, send Codex CLI prompts, and browse/play YouTube from a built-in web tab.
 
 ## Front-Loaded Choices
 
@@ -14,7 +14,6 @@ Turn Tovarish Tsentr into a locally hosted command board for this computer: moni
 - Use a safe server-side command registry. The browser can only trigger named local commands, not arbitrary shell strings.
 - Use OpenClaw from `/home/clark/code/openclaw` through `pnpm openclaw ...`.
 - Use Codex through the authenticated `codex` CLI already on PATH.
-- Support Apple Music/media controls through the host adapters available at runtime: macOS `osascript`, Linux `playerctl`, or WSL/Windows PowerShell media keys. If Apple Music itself is not scriptable from this host, the UI reports that clearly.
 - Implement the browser surface as an embedded web tab using an iframe with URL normalization for YouTube watch URLs. Sites that refuse framing can be launched in an external Chromium/Chrome/Edge window through the command board.
 
 ## Architecture
@@ -32,7 +31,7 @@ The backend streams command results back over the existing WebSocket channel as 
 The center column becomes a tabbed work surface:
 
 - `Terminal`: existing agent/codex event terminal.
-- `Control`: OpenClaw, Codex, media, and browser launch controls.
+- `Control`: OpenClaw, Codex, and browser launch controls.
 - `Web`: URL bar, back/forward/reload controls, embedded iframe, YouTube embed conversion, and an external Chromium launch button.
 
 The right column keeps metrics, narration, and agent comms so the command board still works as an orchestration dashboard.

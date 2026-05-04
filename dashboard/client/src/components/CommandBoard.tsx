@@ -6,7 +6,7 @@ interface CommandDefinition {
   id: string;
   title: string;
   description: string;
-  group: "openclaw" | "codex" | "music" | "browser";
+  group: "openclaw" | "codex" | "browser";
 }
 
 interface CommandResult {
@@ -30,14 +30,12 @@ interface StatusPayload {
 const groupTitle: Record<CommandDefinition["group"], string> = {
   openclaw: "OpenClaw",
   codex: "Codex CLI",
-  music: "Apple Music",
   browser: "Browser",
 };
 
 const groupTone: Record<CommandDefinition["group"], string> = {
   openclaw: "border-soviet-red/50",
   codex: "border-soviet-sky/50",
-  music: "border-soviet-gold/50",
   browser: "border-soviet-teal/50",
 };
 

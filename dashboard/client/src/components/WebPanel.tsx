@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import hammerSickleImg from "../assets/hammer-sickle.png";
 
+const DEFAULT_WEB_URL = "https://www.youtube.com/watch?v=jNQXAC9IVRw";
+
 function normalizeUrl(input: string): string {
   const trimmed = input.trim();
-  if (!trimmed) return "https://www.youtube.com";
+  if (!trimmed) return DEFAULT_WEB_URL;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith("localhost:") || trimmed.startsWith("127.0.0.1:")) return `http://${trimmed}`;
   return `https://${trimmed}`;
@@ -28,11 +30,11 @@ function embeddableUrl(input: string): string {
 }
 
 export function WebPanel() {
-  const [draftUrl, setDraftUrl] = useState("https://www.youtube.com");
-  const [history, setHistory] = useState(["https://www.youtube.com"]);
+  const [draftUrl, setDraftUrl] = useState(DEFAULT_WEB_URL);
+  const [history, setHistory] = useState([DEFAULT_WEB_URL]);
   const [index, setIndex] = useState(0);
   const [frameKey, setFrameKey] = useState(0);
-  const currentUrl = history[index] ?? "https://www.youtube.com";
+  const currentUrl = history[index] ?? DEFAULT_WEB_URL;
   const frameUrl = useMemo(() => embeddableUrl(currentUrl), [currentUrl]);
 
   function navigate(raw: string) {

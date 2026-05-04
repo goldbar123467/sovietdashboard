@@ -8,7 +8,7 @@ test("command registry exposes only named safe commands", () => {
 
   assert.ok(ids.includes("openclaw.status"));
   assert.ok(ids.includes("codex.version"));
-  assert.ok(ids.includes("music.playPause"));
+  assert.equal(ids.some((id) => id.startsWith("music.")), false);
   assert.equal(getCommandDefinition("rm -rf /"), undefined);
   assert.equal(getCommandDefinition("openclaw.status")?.risky, false);
 });

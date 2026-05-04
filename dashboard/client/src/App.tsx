@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { Header } from "./components/Header";
-import { AgentColumn } from "./components/AgentColumn";
-import { TerminalPanel } from "./components/TerminalPanel";
 import { MetricsPanel } from "./components/MetricsPanel";
 import { NarratorPanel } from "./components/NarratorPanel";
 import { ChatPanel } from "./components/ChatPanel";
@@ -15,7 +13,7 @@ import { useAnthem } from "./hooks/useAnthem";
 export function App() {
   const ws = useWebSocket(`ws://${window.location.hostname}:4981/ws`);
   const { play: playAnthem } = useAnthem();
-  const [centerTab, setCenterTab] = useState<"terminal" | "control" | "web">("control");
+  const [centerTab, setCenterTab] = useState<"control" | "web">("control");
 
   useEffect(() => {
     return ws.on("anthem", () => {
@@ -26,14 +24,12 @@ export function App() {
   return (
     <WsContext.Provider value={ws}>
       <SovietBackground />
-      <div className="relative z-10 h-screen grid grid-rows-[64px_1fr] grid-cols-[250px_1fr_330px] gap-1 p-1">
+      <div className="relative z-10 h-screen grid grid-rows-[64px_1fr] grid-cols-[minmax(0,1fr)_330px] gap-1 p-1">
         <Header />
-        <AgentColumn />
         <main className="min-h-0 flex flex-col overflow-hidden">
           <div className="flex h-8 shrink-0 border-2 border-b-0 border-soviet-red bg-soviet-bg/80">
             {[
               ["control", "Command Board"],
-              ["terminal", "Terminal"],
               ["web", "Web Tab"],
             ].map(([id, label]) => (
               <button
@@ -52,7 +48,6 @@ export function App() {
           </div>
           <div className="flex-1 min-h-0">
             {centerTab === "control" && <CommandBoard />}
-            {centerTab === "terminal" && <TerminalPanel />}
             {centerTab === "web" && <WebPanel />}
           </div>
         </main>

@@ -22,7 +22,7 @@ export interface ProcessCommandDefinition {
   id: string;
   title: string;
   description: string;
-  group: "openclaw" | "codex" | "music" | "browser";
+  group: "openclaw" | "codex" | "browser";
   kind: "process";
   command: string;
   args: string[];
@@ -35,7 +35,7 @@ interface HandlerCommandDefinition {
   id: string;
   title: string;
   description: string;
-  group: "openclaw" | "codex" | "music" | "browser";
+  group: "openclaw" | "codex" | "browser";
   kind: "handler";
   handler: (input: CommandInput) => Promise<Omit<CommandResult, "id" | "title" | "startedAt" | "finishedAt">>;
   risky: false;
@@ -113,42 +113,6 @@ const COMMANDS: CommandDefinition[] = [
     group: "codex",
     kind: "handler",
     handler: runCodexPrompt,
-    risky: false,
-  },
-  {
-    id: "music.open",
-    title: "Open Music",
-    description: "Open Apple Music/Music where the host supports it.",
-    group: "music",
-    kind: "handler",
-    handler: () => runMusicAction("open"),
-    risky: false,
-  },
-  {
-    id: "music.playPause",
-    title: "Play/Pause",
-    description: "Toggle media playback.",
-    group: "music",
-    kind: "handler",
-    handler: () => runMusicAction("playPause"),
-    risky: false,
-  },
-  {
-    id: "music.next",
-    title: "Next Track",
-    description: "Skip to the next track.",
-    group: "music",
-    kind: "handler",
-    handler: () => runMusicAction("next"),
-    risky: false,
-  },
-  {
-    id: "music.previous",
-    title: "Previous Track",
-    description: "Return to the previous track.",
-    group: "music",
-    kind: "handler",
-    handler: () => runMusicAction("previous"),
     risky: false,
   },
 ];
@@ -276,62 +240,4 @@ async function runCodexPrompt(input: CommandInput): Promise<Omit<CommandResult, 
   }
 
   return result;
-}
-
-async function runMusicAction(action: "open" | "playPause" | "next" | "previous"): Promise<Omit<CommandResult, "id" | "title" | "startedAt" | "finishedAt">> {
-  if (process.platform === "darwin") {
-    const scriptByAction: Record<typeof action, string> = {
-      open: `tell application "Music" to activate`,
-      playPause: `tell application "Music" to playpause`,
-      next: `tell application "Music" to next track`,
-      previous: `tell application "Music" to previous track`,
-    };
-    return runProcess({
-      id: `music.${action}.darwin`,
-      title: "Music",
-      description: "macOS Music control",
-      group: "music",
-      kind: "process",
-      command: "osascript",
-      args: ["-e", scriptByAction[action]],
-      timeoutMs: 10_000,
-      risky: false,
-    });
-  }
-
-  if (process.platform === "linux" && process.env.WSL_DISTRO_NAME) {
-    const keyByAction: Record<typeof action, string> = {
-      open: "Start-Process 'music:'",
-      playPause: "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([char]179)",
-      next: "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([char]176)",
-      previous: "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([char]177)",
-    };
-    return runProcess({
-      id: `music.${action}.wsl`,
-      title: "Windows Media",
-      description: "Windows media control from WSL",
-      group: "music",
-      kind: "process",
-      command: "powershell.exe",
-      args: ["-NoProfile", "-Command", keyByAction[action]],
-      timeoutMs: 10_000,
-      risky: false,
-    });
-  }
-
-  if (action === "open") {
-    return { ok: false, output: "Opening Apple Music is only supported on macOS or WSL/Windows from this command board.", code: null };
-  }
-
-  return runProcess({
-    id: `music.${action}.playerctl`,
-    title: "MPRIS Media",
-    description: "Linux media control",
-    group: "music",
-    kind: "process",
-    command: "playerctl",
-    args: [action === "playPause" ? "play-pause" : action],
-    timeoutMs: 10_000,
-    risky: false,
-  });
 }

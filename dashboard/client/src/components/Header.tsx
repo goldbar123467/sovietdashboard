@@ -2,7 +2,7 @@ import ushankaImg from "../assets/ushanka.png";
 
 export function Header() {
   return (
-    <header className="col-span-3 relative flex items-center bg-soviet-red border-2 border-soviet-red overflow-hidden">
+    <header className="col-span-full relative flex items-center bg-soviet-red border-2 border-soviet-red overflow-hidden">
       {/* Diagonal stripe overlay */}
       <div className="stripe-bg absolute inset-0 pointer-events-none" />
 

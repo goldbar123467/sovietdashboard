@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a localhost command board for OpenClaw, Codex CLI, media playback, and embedded web browsing.
+**Goal:** Build a localhost command board for OpenClaw, Codex CLI, and embedded web browsing.
 
 **Architecture:** Keep the existing React/Vite dashboard and replace the Bun-only backend with a Node HTTP + WebSocket backend. Add a safe local command registry, command board UI, and embedded web tab with YouTube URL normalization and external Chromium fallback launch.
 
@@ -21,7 +21,7 @@
 - Modify `dashboard/server/src/narrator.ts`: use Node `child_process.spawn` instead of `Bun.spawn`.
 - Modify `dashboard/server/src/agents.ts`: use Node `child_process.spawn` instead of `Bun.spawn`.
 - Modify `dashboard/server/src/types.ts`: add command-board WebSocket types.
-- Create `dashboard/server/src/commandRegistry.ts`: safe local commands and command execution.
+- Create `dashboard/server/src/commandRegistry.ts`: safe local OpenClaw/Codex commands and command execution.
 - Create `dashboard/server/src/browserTools.ts`: URL normalization and browser launch helpers.
 - Rewrite `dashboard/server/src/index.ts`: Node HTTP routing and `ws` server.
 - Create `dashboard/server/src/commandRegistry.test.ts`: registry safety tests.
@@ -43,7 +43,7 @@
   Replace Bun-only APIs with Node HTTP, `ws`, JSON event persistence, Node child process spawning, and server scripts.
 
 - [x] **Task 4: Implement local command registry**  
-  Add OpenClaw, Codex, media, and browser command handlers behind named command IDs and JSON APIs.
+  Add OpenClaw, Codex, and browser command handlers behind named command IDs and JSON APIs.
 
 - [x] **Task 5: Implement command-board UI**  
   Add center tabs, command panels, status display, prompt input, media controls, embedded web tab, and WebSocket command result updates.
@@ -53,6 +53,6 @@
 
 ## Self-Review
 
-- Spec coverage: OpenClaw, Codex, media, browser, YouTube, local hosting, and safe command execution are all mapped to tasks.
+- Spec coverage: OpenClaw, Codex, browser, YouTube, local hosting, and safe command execution are all mapped to tasks.
 - Placeholder scan: no TBD/TODO placeholders.
 - Type consistency: command board WebSocket events use `command_result` consistently across backend and frontend.
