@@ -36,6 +36,13 @@ interface EventFrame {
   error?: string;
 }
 
+interface CommandResultFrame {
+  id: string;
+  ok: boolean;
+  title: string;
+  output: string;
+}
+
 const dotClass: Record<AgentStatusValue, string> = {
   active: "dot-active",
   waiting: "dot-waiting",
@@ -206,7 +213,16 @@ export function TerminalPanel() {
       push(id, `${tag} ${e.hook_event} ${e.tool_name ?? ""}${dur}${e.error ? " " + e.error : ""}\x1b[0m`);
     });
 
-    return () => { offStatus(); offChat(); offEvent(); };
+    const offCommand = ws.on("command_result", (r: CommandResultFrame) => {
+      const color = r.ok ? "\x1b[32m" : "\x1b[33m";
+      push("queen", `${color}[${now()}] command: ${r.title} (${r.id})\x1b[0m`);
+      for (const line of r.output.split("\n").slice(0, 12)) {
+        push("queen", `  ${line}`);
+      }
+      push("queen", "");
+    });
+
+    return () => { offStatus(); offChat(); offEvent(); offCommand(); };
   }, [ws]);
 
   // Replay buffer when active tab changes.
@@ -227,7 +243,7 @@ export function TerminalPanel() {
   });
 
   return (
-    <div className="relative flex flex-col border-2 border-soviet-red bg-soviet-panel overflow-hidden">
+    <div className="relative h-full flex flex-col border-2 border-soviet-red bg-soviet-panel overflow-hidden">
       <div className="relative flex items-center h-8 bg-soviet-red shrink-0">
         <div className="stripe-bg absolute inset-0 pointer-events-none" />
         <img src={hammerSickleImg} alt="" className="relative z-10 w-4 h-4 ml-2 opacity-80" />

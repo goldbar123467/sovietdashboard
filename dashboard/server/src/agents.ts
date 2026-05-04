@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 import { addEvent } from "./db.js";
 import type { AgentStatus, ChatMessage } from "./types.js";
 
@@ -143,8 +144,8 @@ async function runCodex(def: AgentDef, userMessage: string): Promise<string | nu
 
   const prompt = `${def.systemPrompt}\n\nOperator message:\n${userMessage}\n\nRespond now.`;
 
-  const proc = Bun.spawn([
-    "codex", "exec",
+  const proc = spawn("codex", [
+    "exec",
     "--ephemeral",
     "--skip-git-repo-check",
     "--sandbox", "read-only",
@@ -153,17 +154,18 @@ async function runCodex(def: AgentDef, userMessage: string): Promise<string | nu
     "--color", "never",
     prompt,
   ], {
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
   });
 
   const timeout = setTimeout(() => { try { proc.kill(); } catch {} }, 120_000);
   try {
-    const code = await proc.exited;
+    const code = await new Promise<number | null>((resolve, reject) => {
+      proc.on("error", reject);
+      proc.on("close", resolve);
+    });
     if (code !== 0) {
-      const err = await new Response(proc.stderr).text();
+      const err = await streamText(proc.stderr);
       console.error(`[agent:${def.id}] codex exit ${code}: ${err.slice(0, 300)}`);
       return null;
     }
@@ -175,4 +177,13 @@ async function runCodex(def: AgentDef, userMessage: string): Promise<string | nu
     clearTimeout(timeout);
     try { rmSync(workdir, { recursive: true, force: true }); } catch {}
   }
+}
+
+async function streamText(stream: NodeJS.ReadableStream | null): Promise<string> {
+  if (!stream) return "";
+  let text = "";
+  for await (const chunk of stream) {
+    text += chunk.toString();
+  }
+  return text;
 }

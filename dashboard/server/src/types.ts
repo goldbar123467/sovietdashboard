@@ -28,9 +28,20 @@ export interface ChatMessage {
   timestamp: string;
 }
 
+export interface CommandResultMessage {
+  id: string;
+  ok: boolean;
+  title: string;
+  output: string;
+  code?: number | null;
+  startedAt: string;
+  finishedAt: string;
+}
+
 export type WsMessage =
   | { type: "event"; data: HookEvent }
   | { type: "agent_status"; data: AgentStatus[] }
   | { type: "chat"; data: ChatMessage }
   | { type: "narrator"; data: string }
+  | { type: "command_result"; data: CommandResultMessage }
   | { type: "anthem" };

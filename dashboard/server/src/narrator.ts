@@ -2,6 +2,7 @@ import { recentEvents } from "./db.js";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 
 const POLL_INTERVAL = 60_000; // 60s — codex exec is slower and heavier than a chat API
 const CODEX_TIMEOUT_MS = 90_000;
@@ -39,10 +40,8 @@ async function runCodex(prompt: string): Promise<string | null> {
   if (CODEX_MODEL) args.push("--model", CODEX_MODEL);
   args.push(prompt);
 
-  const proc = Bun.spawn(["codex", ...args], {
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
+  const proc = spawn("codex", args, {
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env },
   });
 
@@ -51,10 +50,14 @@ async function runCodex(prompt: string): Promise<string | null> {
   }, CODEX_TIMEOUT_MS);
 
   try {
-    const code = await proc.exited;
+    const stderrPromise = streamText(proc.stderr);
+    const code = await new Promise<number | null>((resolve, reject) => {
+      proc.on("error", reject);
+      proc.on("close", resolve);
+    });
     clearTimeout(timer);
     if (code !== 0) {
-      const err = await new Response(proc.stderr).text();
+      const err = await stderrPromise;
       console.error("[narrator] codex exited", code, err.slice(0, 400));
       return null;
     }
@@ -67,6 +70,13 @@ async function runCodex(prompt: string): Promise<string | null> {
     clearTimeout(timer);
     try { rmSync(workdir, { recursive: true, force: true }); } catch {}
   }
+}
+
+async function streamText(stream: NodeJS.ReadableStream | null): Promise<string> {
+  if (!stream) return "";
+  let text = "";
+  for await (const chunk of stream) text += chunk.toString();
+  return text;
 }
 
 async function generateSummary() {
