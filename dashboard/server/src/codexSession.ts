@@ -9,7 +9,7 @@ import {
   statSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 export interface CodexUsage {
   inputTokens: number;
@@ -88,6 +88,7 @@ const EMPTY_USAGE: CodexUsage = {
 const MAX_RUNS = 30;
 const DEFAULT_TIMEOUT_MS = Number(process.env.CODEX_DASHBOARD_TIMEOUT_MS ?? "600000");
 const CODEX_SESSIONS_ROOT = process.env.CODEX_SESSIONS_ROOT || join(homedir(), ".codex", "sessions");
+const DEFAULT_SANDBOX_MODE = "workspace-write";
 
 let state = createEmptyCodexDashboardState();
 let broadcaster: ((snapshot: CodexDashboardSnapshot) => void) | null = null;
@@ -206,7 +207,8 @@ export async function submitCodexPrompt(prompt: string, repoRoot: string): Promi
   let stderr = "";
   let code: number | null = null;
   try {
-    const args = buildCodexArgs(body, repoRoot, outFile, state.activeThreadId);
+    const workspaceRoot = resolveCodexWorkspaceRoot(repoRoot);
+    const args = buildCodexArgs(body, workspaceRoot, outFile, state.activeThreadId);
     const result = await runCodexProcess(args);
     stdout = result.stdout;
     stderr = result.stderr;
@@ -248,7 +250,14 @@ export async function submitCodexPrompt(prompt: string, repoRoot: string): Promi
   return run;
 }
 
-function buildCodexArgs(prompt: string, repoRoot: string, outFile: string, threadId?: string): string[] {
+export function resolveCodexWorkspaceRoot(repoRoot: string): string {
+  if (process.env.CODEX_DASHBOARD_WORKSPACE_ROOT) {
+    return resolve(process.env.CODEX_DASHBOARD_WORKSPACE_ROOT);
+  }
+  return dirname(resolve(repoRoot));
+}
+
+export function buildCodexArgs(prompt: string, workspaceRoot: string, outFile: string, threadId?: string): string[] {
   if (threadId) {
     return [
       "exec",
@@ -265,9 +274,9 @@ function buildCodexArgs(prompt: string, repoRoot: string, outFile: string, threa
     "exec",
     "--skip-git-repo-check",
     "--sandbox",
-    "workspace-write",
+    process.env.CODEX_DASHBOARD_SANDBOX || DEFAULT_SANDBOX_MODE,
     "--cd",
-    repoRoot,
+    workspaceRoot,
     "--output-last-message",
     outFile,
     "--color",

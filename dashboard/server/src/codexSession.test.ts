@@ -8,6 +8,8 @@ import {
   listCodexSessionSummaries,
   createEmptyCodexDashboardState,
   applyCodexRunToState,
+  buildCodexArgs,
+  resolveCodexWorkspaceRoot,
 } from "./codexSession.js";
 
 test("extractCodexExecSummary reads thread id and token usage from JSONL", () => {
@@ -102,4 +104,19 @@ test("listCodexSessionSummaries returns metadata without prompt text", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("resolveCodexWorkspaceRoot defaults to the workspace above the dashboard repo", () => {
+  assert.equal(
+    resolveCodexWorkspaceRoot("/home/clark/code/sovietdashboard"),
+    "/home/clark/code",
+  );
+});
+
+test("buildCodexArgs starts new sessions in the writable workspace root", () => {
+  const args = buildCodexArgs("create a sibling project", "/home/clark/code", "/tmp/last.txt");
+
+  assert.equal(args[args.indexOf("--cd") + 1], "/home/clark/code");
+  assert.equal(args[args.indexOf("--sandbox") + 1], "workspace-write");
+  assert.equal(args.includes("resume"), false);
 });
