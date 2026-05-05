@@ -90,22 +90,27 @@ export function snapshot(window: MetricsWindow): MetricsSnapshot {
   }
 
   const codex = getCodexDashboardState();
+  const codexTotals = window === "7d"
+    ? codex.statWindows["7d"]
+    : window === "all"
+      ? codex.statWindows.lifetime
+      : codex.totals;
 
   return {
     window,
     since: sinceIso,
     totals: {
-      tokens: codex.totals.totalTokens,
-      tool_calls: codex.totals.toolCalls,
+      tokens: codexTotals.totalTokens,
+      tool_calls: codexTotals.toolCalls,
       events: rows.length,
       errors,
       avg_duration_ms: Math.round(durationCount ? durationSum / durationCount : 0),
       active_agents: codex.status === "running" ? 1 : 0,
       queued: 0,
-      turns: codex.totals.turns,
-      cached_tokens: codex.totals.cachedInputTokens,
-      reasoning_tokens: codex.totals.reasoningOutputTokens,
-      failures: codex.totals.failures,
+      turns: codexTotals.turns,
+      cached_tokens: codexTotals.cachedInputTokens,
+      reasoning_tokens: codexTotals.reasoningOutputTokens,
+      failures: codexTotals.failures,
     },
     series,
   };

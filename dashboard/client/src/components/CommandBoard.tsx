@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import hammerSickleImg from "../assets/hammer-sickle.png";
 import redSonLogo from "../assets/red-son-logo.png";
 import { useWebSocketContext } from "../hooks/useWebSocketContext";
-import { AGENT_COMMS_STAGE_COPY } from "./agentCommsStage";
+import { AGENT_COMMS_STAGE_COPY, agentCommsBackdropMode } from "./agentCommsStage";
 
 interface CommandDefinition {
   id: string;
@@ -33,6 +33,20 @@ interface CodexUsage {
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
+}
+
+type CodexStatsWindow = "1h" | "1d" | "7d" | "lifetime";
+
+interface CodexStatsTotals {
+  turns: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+  totalTokens: number;
+  toolCalls: number;
+  failures: number;
+  avgDurationMs: number;
 }
 
 interface CodexRunRecord {
@@ -80,6 +94,7 @@ interface CodexDashboardSnapshot {
     failures: number;
     avgDurationMs: number;
   };
+  statWindows: Record<CodexStatsWindow, CodexStatsTotals>;
   recentSessions: CodexSessionSummary[];
 }
 
@@ -106,8 +121,21 @@ const EMPTY_CODEX_STATE: CodexDashboardSnapshot = {
     failures: 0,
     avgDurationMs: 0,
   },
+  statWindows: {
+    "1h": emptyStatsTotals(),
+    "1d": emptyStatsTotals(),
+    "7d": emptyStatsTotals(),
+    lifetime: emptyStatsTotals(),
+  },
   recentSessions: [],
 };
+
+const statsWindowLabels: Array<[CodexStatsWindow, string]> = [
+  ["1h", "1 hr"],
+  ["1d", "1 day"],
+  ["7d", "7 days"],
+  ["lifetime", "lifetime"],
+];
 
 const commandTone: Record<"openclaw" | "codex", string> = {
   openclaw: "border-soviet-red/45 hover:border-soviet-red-bright hover:bg-soviet-red/15",
@@ -158,9 +186,24 @@ function timeLabel(value?: string): string {
   return new Date(value).toLocaleTimeString("en-US", { hour12: false });
 }
 
+function emptyStatsTotals(): CodexStatsTotals {
+  return {
+    turns: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningOutputTokens: 0,
+    totalTokens: 0,
+    toolCalls: 0,
+    failures: 0,
+    avgDurationMs: 0,
+  };
+}
+
 export function CommandBoard() {
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [codexState, setCodexState] = useState<CodexDashboardSnapshot>(EMPTY_CODEX_STATE);
+  const [statsWindow, setStatsWindow] = useState<CodexStatsWindow>("1h");
   const [prompt, setPrompt] = useState("Review the current repo status and tell me the next best code action.");
   const [openClawText, setOpenClawText] = useState("Reply with OK only.");
   const [running, setRunning] = useState<string | null>(null);
@@ -241,16 +284,17 @@ export function CommandBoard() {
     };
   }, [status]);
 
+  const selectedStats = codexState.statWindows?.[statsWindow] ?? codexState.totals;
   const statCards = useMemo(() => ([
-    ["Total Tokens", formatNumber(codexState.totals.totalTokens), "border-soviet-red/50"],
-    ["Input", formatNumber(codexState.totals.inputTokens), "border-soviet-sky/50"],
-    ["Cached", formatNumber(codexState.totals.cachedInputTokens), "border-soviet-teal/50"],
-    ["Output", formatNumber(codexState.totals.outputTokens), "border-soviet-gold/50"],
-    ["Reasoning", formatNumber(codexState.totals.reasoningOutputTokens), "border-soviet-violet/50"],
-    ["Tool Calls", formatNumber(codexState.totals.toolCalls), "border-soviet-green/50"],
-    ["Turns", formatNumber(codexState.totals.turns), "border-soviet-cream/35"],
-    ["Avg Turn", formatDuration(codexState.totals.avgDurationMs), "border-soviet-red/35"],
-  ]), [codexState]);
+    ["Total Tokens", formatNumber(selectedStats.totalTokens), "border-soviet-red/50"],
+    ["Input", formatNumber(selectedStats.inputTokens), "border-soviet-sky/50"],
+    ["Cached", formatNumber(selectedStats.cachedInputTokens), "border-soviet-teal/50"],
+    ["Output", formatNumber(selectedStats.outputTokens), "border-soviet-gold/50"],
+    ["Reasoning", formatNumber(selectedStats.reasoningOutputTokens), "border-soviet-violet/50"],
+    ["Tool Calls", formatNumber(selectedStats.toolCalls), "border-soviet-green/50"],
+    ["Turns", formatNumber(selectedStats.turns), "border-soviet-cream/35"],
+    ["Avg Turn", formatDuration(selectedStats.avgDurationMs), "border-soviet-red/35"],
+  ]), [selectedStats]);
 
   async function runCommand(id: string, body: Record<string, string> = {}) {
     setRunning(id);
@@ -315,6 +359,7 @@ export function CommandBoard() {
 
   const disabled = running !== null || codexState.status === "running";
   const newestRun = codexState.runs[0];
+  const outputBackdropMode = agentCommsBackdropMode(results.length);
 
   return (
     <div className="relative h-full min-h-0 flex flex-col border-2 border-soviet-red bg-soviet-panel overflow-hidden">
@@ -385,15 +430,19 @@ export function CommandBoard() {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto scroll-soviet p-3 space-y-2">
-            {results.length === 0 ? (
-              <div className="relative h-full min-h-[220px] overflow-hidden border border-soviet-cream/20 bg-black">
-                <img
-                  src={redSonLogo}
-                  alt=""
-                  className="red-son-watermark absolute inset-0 m-auto h-[72%] w-[72%] object-contain opacity-[0.28]"
-                />
-                <div className="absolute inset-0 opacity-55 spy-scanlines" />
+          <div className={`relative flex-1 min-h-0 overflow-x-hidden overflow-y-auto scroll-soviet p-0 bg-black ${outputBackdropMode === "active" ? "agent-output-active" : ""}`}>
+            <img
+              src={redSonLogo}
+              alt=""
+              className={`red-son-watermark pointer-events-none absolute left-1/2 object-contain
+                ${outputBackdropMode === "active"
+                  ? "top-1/2 h-[68%] w-[68%] -translate-x-1/2 -translate-y-1/2 opacity-[0.22]"
+                  : "top-1/2 h-[72%] w-[72%] -translate-x-1/2 -translate-y-1/2 opacity-[0.28]"}`}
+            />
+            <div className="pointer-events-none absolute inset-0 opacity-55 spy-scanlines" />
+            <div className="relative z-10 min-h-full p-3 space-y-2">
+              {results.length === 0 ? (
+              <div className="relative h-full min-h-[220px] overflow-hidden bg-transparent">
                 <div className="relative z-10 h-full min-h-[220px] flex items-center px-6">
                   <div className="w-full">
                     <div className="mb-3 flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.28em] text-soviet-cream/60">
@@ -407,7 +456,7 @@ export function CommandBoard() {
                 </div>
               </div>
             ) : results.map((result, index) => (
-              <article key={`${result.id}-${result.finishedAt}-${index}`} className="border border-soviet-red/25 bg-soviet-panel/85 p-2.5">
+              <article key={`${result.id}-${result.finishedAt}-${index}`} className="relative z-10 border border-soviet-red/25 bg-soviet-panel/76 p-2.5 backdrop-blur-[1px]">
                 <div className="flex items-center justify-between gap-2">
                   <span className={`text-[11px] font-['Oswald'] uppercase tracking-wider ${result.ok ? "text-soviet-green" : "text-soviet-gold"}`}>
                     {result.title}
@@ -421,6 +470,7 @@ export function CommandBoard() {
                 </pre>
               </article>
             ))}
+            </div>
           </div>
         </section>
 
@@ -431,8 +481,22 @@ export function CommandBoard() {
                 Live Codex Stats
               </h3>
               <span className="text-[9px] font-mono text-soviet-cream/35">
-                failures {formatNumber(codexState.totals.failures)}
+                failures {formatNumber(selectedStats.failures)}
               </span>
+            </div>
+            <div className="mb-2 grid grid-cols-4 gap-1">
+              {statsWindowLabels.map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setStatsWindow(id)}
+                  className={`h-7 border text-[10px] font-['Oswald'] uppercase tracking-wider transition-colors
+                    ${statsWindow === id
+                      ? "border-soviet-gold bg-soviet-gold/20 text-soviet-gold"
+                      : "border-soviet-red/30 bg-soviet-panel/70 text-soviet-cream/45 hover:text-soviet-cream hover:border-soviet-red/60"}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {statCards.map(([label, value, tone]) => (
@@ -445,6 +509,10 @@ export function CommandBoard() {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[9px] font-mono text-soviet-cream/35">
+              <span>persisted ledger</span>
+              <span>codex-runs.json</span>
             </div>
           </section>
 

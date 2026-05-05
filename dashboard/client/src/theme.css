@@ -83,6 +83,7 @@
     contrast(1.55)
     drop-shadow(0 0 18px rgba(196, 30, 30, 0.45));
   animation: red-son-reveal 0.85s steps(24, end) forwards;
+  transition: top 420ms ease, width 420ms ease, height 420ms ease, opacity 420ms ease;
 }
 
 @keyframes red-son-reveal {
@@ -101,6 +102,15 @@
 
 @keyframes spy-sweep {
   to { background-position: 0 7px, 180px 0; }
+}
+
+.agent-output-active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.54) 42%, rgba(0, 0, 0, 0.22));
 }
 
 .scroll-soviet {

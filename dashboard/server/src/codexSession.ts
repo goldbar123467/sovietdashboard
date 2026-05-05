@@ -10,6 +10,12 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import {
+  codexRunLedger,
+  type CodexStatsWindows,
+  type LedgerCodexRun,
+  toLedgerRun,
+} from "./codexRunLedger.js";
 
 export interface CodexUsage {
   inputTokens: number;
@@ -75,6 +81,8 @@ export interface CodexDashboardState {
 
 export interface CodexDashboardSnapshot extends CodexDashboardState {
   recentSessions: CodexSessionSummary[];
+  statWindows: CodexStatsWindows;
+  recentLedgerRuns: LedgerCodexRun[];
 }
 
 const EMPTY_USAGE: CodexUsage = {
@@ -122,6 +130,8 @@ export function getCodexDashboardState(): CodexDashboardSnapshot {
     runs: state.runs.map((run) => ({ ...run, usage: { ...run.usage } })),
     totals: { ...state.totals },
     recentSessions: listCodexSessionSummaries(),
+    statWindows: codexRunLedger.windows(),
+    recentLedgerRuns: codexRunLedger.list(12),
   };
 }
 
@@ -246,6 +256,7 @@ export async function submitCodexPrompt(prompt: string, repoRoot: string): Promi
   };
 
   applyCodexRunToState(state, run);
+  codexRunLedger.append(toLedgerRun(run));
   emitState();
   return run;
 }

@@ -4,6 +4,8 @@ events.db
 tovarish.db
 tovarish.db-shm
 tovarish.db-wal
+codex-runs.json
+dashboard/server/codex-runs.json
 .library/**
 !.library/**/
 !.library/**/.gitkeep

@@ -12,6 +12,7 @@ import {
   setCodexSessionBroadcaster,
   submitCodexPrompt,
 } from "./codexSession.js";
+import { codexRunLedger } from "./codexRunLedger.js";
 
 const PORT = Number(process.env.PORT) || 4981;
 
@@ -156,6 +157,11 @@ async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 
   if (method === "GET" && url.pathname === "/api/codex/session") {
     sendJson(res, getCodexDashboardState());
+    return;
+  }
+
+  if (method === "GET" && url.pathname === "/api/codex/runs") {
+    sendJson(res, codexRunLedger.list(Number(url.searchParams.get("limit")) || 50));
     return;
   }
 
