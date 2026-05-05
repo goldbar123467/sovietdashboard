@@ -3,6 +3,7 @@ import hammerSickleImg from "../assets/hammer-sickle.png";
 import redSonLogo from "../assets/red-son-logo.png";
 import { useWebSocketContext } from "../hooks/useWebSocketContext";
 import { AGENT_COMMS_STAGE_COPY, agentCommsBackdropMode } from "./agentCommsStage";
+import { PetDock } from "./PetDock";
 
 interface CommandDefinition {
   id: string;
@@ -515,6 +516,15 @@ export function CommandBoard() {
               <span>codex-runs.json</span>
             </div>
           </section>
+
+          <PetDock
+            codexStatus={codexState.status}
+            failures={selectedStats.failures}
+            lastRunOk={newestRun?.ok}
+            totalTokens={selectedStats.totalTokens}
+            cachedInputTokens={selectedStats.cachedInputTokens}
+            onPromptPick={setPrompt}
+          />
 
           <section className="border border-soviet-sky/40 bg-soviet-bg/45 p-2">
             <div className="flex items-baseline justify-between mb-2">
