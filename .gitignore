@@ -10,6 +10,9 @@ dashboard/server/codex-runs.json
 !.library/**/
 !.library/**/.gitkeep
 dist/
+.playwright-cli/
+output/
+dashboard/server/tovarish-events.json
 .superpowers/
 .worktrees/
 .agent-worktrees/
