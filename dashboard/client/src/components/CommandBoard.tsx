@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import hammerSickleImg from "../assets/hammer-sickle.png";
+import redSonLogo from "../assets/red-son-logo.png";
 import { useWebSocketContext } from "../hooks/useWebSocketContext";
+import { AGENT_COMMS_STAGE_COPY } from "./agentCommsStage";
 
 interface CommandDefinition {
   id: string;
@@ -385,8 +387,24 @@ export function CommandBoard() {
 
           <div className="flex-1 min-h-0 overflow-y-auto scroll-soviet p-3 space-y-2">
             {results.length === 0 ? (
-              <div className="h-full min-h-[220px] flex items-center justify-center border border-dashed border-soviet-red/25 bg-soviet-panel/40">
-                <p className="text-[11px] italic text-soviet-cream/35">Command output will stream into this board.</p>
+              <div className="relative h-full min-h-[220px] overflow-hidden border border-soviet-cream/20 bg-black">
+                <img
+                  src={redSonLogo}
+                  alt=""
+                  className="red-son-watermark absolute inset-0 m-auto h-[72%] w-[72%] object-contain opacity-[0.28]"
+                />
+                <div className="absolute inset-0 opacity-55 spy-scanlines" />
+                <div className="relative z-10 h-full min-h-[220px] flex items-center px-6">
+                  <div className="w-full">
+                    <div className="mb-3 flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.28em] text-soviet-cream/60">
+                      <span className="h-px w-10 bg-soviet-cream/25" />
+                      {AGENT_COMMS_STAGE_COPY.signal}
+                    </div>
+                    <p className="agent-typewriter agent-output-copy max-w-full font-mono text-[13px] sm:text-[15px] uppercase tracking-[0.12em] text-soviet-cream">
+                      {AGENT_COMMS_STAGE_COPY.primary}
+                    </p>
+                  </div>
+                </div>
               </div>
             ) : results.map((result, index) => (
               <article key={`${result.id}-${result.finishedAt}-${index}`} className="border border-soviet-red/25 bg-soviet-panel/85 p-2.5">
